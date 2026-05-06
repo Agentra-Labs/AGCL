@@ -1,9 +1,9 @@
 import os
 
 # local model
-LOCAL_MODEL_PATH   = os.getenv("LOCAL_MODEL_PATH", "models/qwen2.5-0.5b-instruct-q5_0.gguf")
+LOCAL_MODEL_PATH   = os.getenv("LOCAL_MODEL_PATH", "models/SmolLM2-135M.Q2_K.gguf")
 # local model type
-LOCAL_MODEL_TYPE = os.getenv("LOCAL_MODEL_TYPE", "qwen25")
+LOCAL_MODEL_TYPE = os.getenv("LOCAL_MODEL_TYPE", "smollm2")
 LOCAL_N_CTX        = int(os.getenv("LOCAL_N_CTX", "2048"))
 LOCAL_N_GPU_LAYERS = int(os.getenv("LOCAL_N_GPU_LAYERS", "0"))
 LOCAL_N_THREADS    = int(os.getenv("LOCAL_N_THREADS", "12"))
