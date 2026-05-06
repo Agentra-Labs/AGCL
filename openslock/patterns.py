@@ -11,7 +11,7 @@ import os
 import time
 import threading
 from collections import defaultdict
-from config import STATE_DIR, MIN_PATTERN_DAYS, PATTERN_LOOKBACK_DAYS
+from openslock.config import STATE_DIR, MIN_PATTERN_DAYS, PATTERN_LOOKBACK_DAYS
 
 PATTERN_FILE = os.path.join(STATE_DIR, "patterns.json")
 

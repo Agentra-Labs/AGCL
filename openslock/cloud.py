@@ -14,8 +14,8 @@ the generation start point rather than just hinting at it.
 
 import time
 import asyncio
-import pressure as prs
-from config import (
+import openslock.pressure as prs
+from openslock.config import (
     OPENAI_API_KEY, ANTHROPIC_API_KEY,
     OPENAI_MODEL, CLAUDE_MODEL, DEFAULT_CLOUD,
 )

@@ -18,13 +18,13 @@ import time
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 
-import state
-import pressure as prs
-import patterns
-import context
-from local_llm import generate_prefix, unload as unload_local_model
-from cloud import stream_continuation
-from config import IDLE_FLUSH_SEC
+import openslock.state as state
+import openslock.pressure as prs
+import openslock.patterns as patterns
+import openslock.context as context
+from openslock.local_llm import generate_prefix, unload as unload_local_model
+from openslock.cloud import stream_continuation
+from openslock.config import IDLE_FLUSH_SEC
 
 app = FastAPI(title="nano-cloud-agent")
 

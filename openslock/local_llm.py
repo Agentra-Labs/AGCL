@@ -8,7 +8,7 @@ It returns (prefix_string, latency_sec).
 
 import time
 import threading
-from config import (
+from openslock.config import (
     LOCAL_MODEL_PATH, LOCAL_N_CTX, LOCAL_N_GPU_LAYERS,
     LOCAL_N_THREADS, PREFIX_WORD_COUNT
 )
