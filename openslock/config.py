@@ -1,11 +1,13 @@
 import os
 
 # local model
-LOCAL_MODEL_PATH   = os.getenv("LOCAL_MODEL_PATH", "models/SmolLM2-135M.Q2_K.gguf")
+LOCAL_MODEL_PATH   = os.getenv("LOCAL_MODEL_PATH", "models/qwen2.5-0.5b-instruct-q5_0.gguf")
+# local model type
+LOCAL_MODEL_TYPE = os.getenv("LOCAL_MODEL_TYPE", "qwen25")
 LOCAL_N_CTX        = int(os.getenv("LOCAL_N_CTX", "2048"))
 LOCAL_N_GPU_LAYERS = int(os.getenv("LOCAL_N_GPU_LAYERS", "0"))
-LOCAL_N_THREADS    = int(os.getenv("LOCAL_N_THREADS", "4"))
-PREFIX_WORD_COUNT  = int(os.getenv("PREFIX_WORD_COUNT", "6"))  # words local model fires before cloud takes over
+LOCAL_N_THREADS    = int(os.getenv("LOCAL_N_THREADS", "12"))
+PREFIX_WORD_COUNT  = int(os.getenv("PREFIX_WORD_COUNT", "4"))  # words local model fires before cloud takes over
 
 # cloud
 OPENAI_API_KEY  = os.getenv("OPENAI_API_KEY", "")

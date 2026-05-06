@@ -9,9 +9,15 @@ It returns (prefix_string, latency_sec).
 import time
 import threading
 from openslock.config import (
-    LOCAL_MODEL_PATH, LOCAL_N_CTX, LOCAL_N_GPU_LAYERS,
-    LOCAL_N_THREADS, PREFIX_WORD_COUNT
+    LOCAL_MODEL_PATH,
+    LOCAL_MODEL_TYPE,
+    LOCAL_N_CTX,
+    LOCAL_N_GPU_LAYERS,
+    LOCAL_N_THREADS,
+    PREFIX_WORD_COUNT,
 )
+
+from openslock.templates import MODEL_TEMPLATES
 
 _model = None
 _lock  = threading.Lock()
@@ -45,42 +51,6 @@ def unload():
             print("[local_llm] unloading (idle)")
             _model = None   # GC handles cleanup
 
-
-#  prompt formatting 
-
-def _to_chatml(messages):
-    parts = []
-    for m in messages:
-        role    = m.get("role", "user")
-        content = m.get("content", "")
-        if role == "system":
-            parts.append(f"<|im_start|>system\n{content}<|im_end|>")
-        elif role == "user":
-            parts.append(f"<|im_start|>user\n{content}<|im_end|>")
-        elif role == "assistant":
-            parts.append(f"<|im_start|>assistant\n{content}<|im_end|>")
-    parts.append("<|im_start|>assistant\n")
-    return "\n".join(parts)
-
-def _to_plain(messages):
-    """
-    Fallback for base models that aren't instruction-tuned.
-    Just puts the last user message as a plain continuation prompt.
-    """
-    user_msgs = [m["content"] for m in messages if m.get("role") == "user"]
-    last = user_msgs[-1] if user_msgs else ""
-    return f"Q: {last}\nA:"
-
-# set PROMPT_FORMAT=plain in env if your model isn't ChatML-tuned
-import os as _os
-_PROMPT_FORMAT = _os.getenv("PROMPT_FORMAT", "chatml")   # "chatml" | "plain"
-
-def _format_prompt(messages):
-    if _PROMPT_FORMAT == "plain":
-        return _to_plain(messages)
-    return _to_chatml(messages)
-
-
 #  prefix generation 
 
 def generate_prefix(messages, word_count=None):
@@ -91,23 +61,75 @@ def generate_prefix(messages, word_count=None):
     can still take over cleanly.
     """
     word_count = word_count or PREFIX_WORD_COUNT
-    prompt = _format_prompt(messages)
+    template = MODEL_TEMPLATES[LOCAL_MODEL_TYPE]
+
+    prompt = template["format_prompt"](messages)
+    gen_cfg = template["generation"]
 
     t0 = time.time()
     try:
         with _lock:
             m = _get()
+            m.reset()
             output = m(
                 prompt,
-                max_tokens=word_count * 3,   # tight ceiling
-                temperature=0.7,
-                repeat_penalty=1.15,          # prevents "heiz heiz heiz" loops
-                stop=["<|im_end|>", "<|im_start|>", "\n\n", "User:", "user:"],
+                max_tokens=gen_cfg["max_tokens"],
+                temperature=gen_cfg["temperature"],
+                top_p=gen_cfg["top_p"],
+                top_k=gen_cfg["top_k"],
+                repeat_penalty=gen_cfg["repeat_penalty"],
+                stop=gen_cfg["stop"],
                 echo=False,
                 stream=False,
             )
-        raw = output["choices"][0]["text"]
+            raw = output["choices"][0]["text"].strip()
+            # hard remove leading pseudo-search garbage
+            for token in ["?", "\n"]:
+                if token in raw[:80]:
+                    left, right = raw.split(token, 1)
+
+                    # if left side looks like junk query continuation
+                    if len(left.split()) <= 12:
+                        raw = right.strip()
+            # remove weird comma-fragments / title-like prefixes
+            if "," in raw[:80]:
+                first, rest = raw.split(",", 1)
+
+                # if first chunk looks like poetic fluff, drop it
+                if len(first.split()) <= 8:
+                    raw = rest.strip()
+
+            # remove leading quote fragments
+            raw = raw.lstrip('"\':;- ')
+            # remove weird leading pseudo-questions
+            bad_prefixes = [
+                "what does",
+                "what are",
+                "why does",
+                "who is",
+                "how does",
+            ]
+
+            lower = raw.lower()
+
+            for bp in bad_prefixes:
+                if lower.startswith(bp):
+                    splitters = ["\n\n", "\n", ". ", "?"]
+
+                    cut = -1
+                    for s in splitters:
+                        idx = raw.find(s)
+                        if idx != -1:
+                            cut = idx + len(s)
+                            break
+
+                    if cut != -1:
+                        raw = raw[cut:].strip()
+
+                    break
         # hard cap at word_count words regardless of what the model output
+        import re
+        raw = re.sub(r"^[^\w]+", "", raw).strip()
         words = raw.split()[:word_count]
         prefix = " ".join(words).strip()
         print(f"[local_llm] raw={raw!r}  prefix={prefix!r}")

@@ -17,7 +17,7 @@ import threading
 import time
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
-
+from contextlib import asynccontextmanager
 import openslock.state as state
 import openslock.pressure as prs
 import openslock.patterns as patterns
@@ -25,23 +25,22 @@ import openslock.context as context
 from openslock.local_llm import generate_prefix, unload as unload_local_model
 from openslock.cloud import stream_continuation
 from openslock.config import IDLE_FLUSH_SEC
-
-app = FastAPI(title="nano-cloud-agent")
-
-
+ 
 #  startup 
-
-@app.on_event("startup")
-async def on_start():
+@asynccontextmanager
+async def lifespan(app):
     patterns.load()
     patterns.start_scheduler()
 
-    # example reactive trigger: log when active hour fires
     def on_active_hour(hour, hits):
         print(f"[patterns] active hour {hour}:00 — {hits} historical hits")
     patterns.register_trigger(on_active_hour)
 
     threading.Thread(target=_idle_watcher, daemon=True).start()
+    yield
+    state.flush_all()   # clean shutdown
+
+app = FastAPI(title="nano-cloud-agent", lifespan=lifespan)
 
 def _idle_watcher():
     """
