@@ -17,7 +17,7 @@ _model = None
 _lock  = threading.Lock()
 
 
-# ── model lifecycle ───────────────────────────────────────────────────────────
+#  model lifecycle 
 
 def _load():
     global _model
@@ -46,7 +46,7 @@ def unload():
             _model = None   # GC handles cleanup
 
 
-# ── prompt formatting ─────────────────────────────────────────────────────────
+#  prompt formatting 
 
 def _to_chatml(messages):
     parts = []
@@ -81,7 +81,7 @@ def _format_prompt(messages):
     return _to_chatml(messages)
 
 
-# ── prefix generation ─────────────────────────────────────────────────────────
+#  prefix generation 
 
 def generate_prefix(messages, word_count=None):
     """

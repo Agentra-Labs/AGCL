@@ -31,7 +31,7 @@ def needs_recontex(messages):
     return messages_tokens(messages) > MAX_CONTEXT_TOKENS
 
 
-# ── summarizer ────────────────────────────────────────────────────────────────
+#  summarizer 
 
 async def _summarize_via_cloud(messages):
     """Ask cloud to compress older turns into a short summary."""
@@ -59,7 +59,7 @@ async def summarize_older(messages):
         return _summarize_naive(messages)
 
 
-# ── recontextualization ───────────────────────────────────────────────────────
+#  recontextualization 
 
 async def recontextualize(messages):
     """
@@ -86,7 +86,7 @@ async def recontextualize(messages):
     return result
 
 
-# ── append helper used by main ────────────────────────────────────────────────
+#  append helper used by main 
 
 async def append(messages, role, content):
     """Append a message and recontextualize if needed. Returns new list."""

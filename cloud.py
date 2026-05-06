@@ -20,7 +20,7 @@ from config import (
     OPENAI_MODEL, CLAUDE_MODEL, DEFAULT_CLOUD,
 )
 
-# ── continuation system instructions ─────────────────────────────────────────
+#  continuation system instructions 
 
 _BASE = (
     "You are a helpful assistant. A prefix of your response has already been "
@@ -55,7 +55,7 @@ def _build_messages(history, prefix, recovery_mode):
     return msgs
 
 
-# ── streaming generators ──────────────────────────────────────────────────────
+#  streaming generators 
 
 async def _stream_openai(msgs):
     import openai
@@ -89,7 +89,7 @@ async def _stream_claude(msgs, prefix):
             yield text
 
 
-# ── public entry point ────────────────────────────────────────────────────────
+#  public entry point 
 
 async def stream_continuation(history, prefix, provider=None, recovery_mode="natural"):
     """

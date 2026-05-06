@@ -20,7 +20,7 @@ _callbacks = []                  # fn(hour, hit_count) called on active hour
 _lock      = threading.Lock()
 
 
-# ── persistence ───────────────────────────────────────────────────────────────
+#  persistence 
 
 def load():
     global _data
@@ -37,7 +37,7 @@ def save():
         os.replace(tmp, PATTERN_FILE)
 
 
-# ── recording ─────────────────────────────────────────────────────────────────
+#  recording 
 
 def record_usage():
     """Call once per user request."""
@@ -49,7 +49,7 @@ def record_usage():
     save()
 
 
-# ── analysis ──────────────────────────────────────────────────────────────────
+#  analysis 
 
 def active_hours():
     """
@@ -71,7 +71,7 @@ def upcoming_active_hours(lookahead_hours=3):
     return [h % 24 for h in range(current, current + lookahead_hours) if h % 24 in active]
 
 
-# ── reactive triggers ─────────────────────────────────────────────────────────
+#  reactive triggers 
 
 def register_trigger(fn):
     """fn(hour, hit_count) — called when current hour is an active hour."""

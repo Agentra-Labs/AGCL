@@ -16,7 +16,7 @@ _lock     = threading.Lock()
 _last_active = time.time()
 
 
-# ── disk helpers ──────────────────────────────────────────────────────────────
+#  disk helpers 
 
 def _session_path(sid):
     return os.path.join(STATE_DIR, f"sess_{sid}.json")
@@ -34,7 +34,7 @@ def _read(path):
     return None
 
 
-# ── public API ────────────────────────────────────────────────────────────────
+#  public API 
 
 def touch():
     """Call on any user activity."""

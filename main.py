@@ -29,7 +29,7 @@ from config import IDLE_FLUSH_SEC
 app = FastAPI(title="nano-cloud-agent")
 
 
-# ── startup ───────────────────────────────────────────────────────────────────
+#  startup 
 
 @app.on_event("startup")
 async def on_start():
@@ -58,7 +58,7 @@ def _idle_watcher():
             unload_local_model()
 
 
-# ── shared response builder ───────────────────────────────────────────────────
+#  shared response builder 
 
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
@@ -100,7 +100,7 @@ async def _run_chat(session_id, user_message, provider, recovery_mode):
     yield _sse({"type": "done", "pressure": prs.pressure()})
 
 
-# ── routes ────────────────────────────────────────────────────────────────────
+#  routes 
 
 @app.post("/chat/{session_id}")
 async def chat(session_id: str, request: Request):
