@@ -1,6 +1,11 @@
 """
 Entry point. Run with:
-  uvicorn main:app --reload --port 8000
+  python main.py                         # CLI client (auto-starts server)
+  python main.py --session work          # named session
+  python main.py --provider openai       # force provider
+  python main.py --recovery humor        # recovery mode
+  python main.py serve --port 8000       # run the server in the foreground
+  uvicorn main:app --reload --port 8000  # equivalent to `serve`
 
 Endpoints:
   POST /chat/{session_id}          streaming chat (SSE)
@@ -11,13 +16,19 @@ Endpoints:
   GET  /health                     idle time, pressure, session count
 """
 
+import argparse
 import asyncio
 import json
+import subprocess
+import sys
 import threading
 import time
+from contextlib import asynccontextmanager
+
+import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
-from contextlib import asynccontextmanager
+
 import openslock.state as state
 import openslock.pressure as prs
 import openslock.patterns as patterns
@@ -25,8 +36,10 @@ import openslock.context as context
 from openslock.local_llm import generate_prefix, unload as unload_local_model
 from openslock.cloud import stream_continuation
 from openslock.config import IDLE_FLUSH_SEC
- 
-#  startup 
+
+DEFAULT_PORT = 8000
+
+#  startup
 @asynccontextmanager
 async def lifespan(app):
     patterns.load()
@@ -57,7 +70,7 @@ def _idle_watcher():
             unload_local_model()
 
 
-#  shared response builder 
+#  shared response builder
 
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
@@ -99,7 +112,7 @@ async def _run_chat(session_id, user_message, provider, recovery_mode):
     yield _sse({"type": "done", "pressure": prs.pressure()})
 
 
-#  routes 
+#  routes
 
 @app.post("/chat/{session_id}")
 async def chat(session_id: str, request: Request):
@@ -151,3 +164,108 @@ def health():
         "sessions_live": len(state.session_list()),
         "pressure":      prs.pressure(),
     }
+
+
+#  CLI client
+
+def _stream_chat(base, session_id, message, provider, recovery):
+    url  = f"{base}/chat/{session_id}"
+    data = {"message": message, "provider": provider, "recovery_mode": recovery}
+
+    with httpx.stream("POST", url, json=data, timeout=60) as r:
+        for line in r.iter_lines():
+            if not line.startswith("data: "):
+                continue
+            payload = json.loads(line[6:])
+
+            t = payload.get("type")
+            if t == "prefix":
+                ms  = payload.get("local_ms", 0)
+                txt = payload.get("text", "")
+                print(f"\033[90m[local {ms}ms]\033[0m ", end="", flush=True)
+                print(txt, end="", flush=True)
+            elif t == "chunk":
+                print(payload.get("text", ""), end="", flush=True)
+            elif t == "done":
+                p = payload.get("pressure", {})
+                print(f"\n\033[90m[pressure rate={p.get('rate_ratio')} lat={p.get('avg_latency_sec')}s]\033[0m")
+
+def _ensure_server(base, port):
+    try:
+        httpx.get(f"{base}/health", timeout=2)
+        return  # already up
+    except httpx.ConnectError:
+        pass
+
+    print("[server] not running, starting...")
+    subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "main:app", "--port", str(port), "--log-level", "warning"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    # wait until it responds, bail after 15s
+    for _ in range(30):
+        time.sleep(0.5)
+        try:
+            httpx.get(f"{base}/health", timeout=1)
+            print("[server] ready")
+            return
+        except httpx.ConnectError:
+            pass
+    print(f"[server] failed to start — run manually: python main.py serve --port {port}")
+    sys.exit(1)
+
+def _run_cli(args):
+    base = f"http://localhost:{args.port}"
+    _ensure_server(base, args.port)
+    print(f"Agent CLI — session={args.session}  (ctrl+c to quit)\n")
+    while True:
+        try:
+            msg = input("you: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nbye")
+            break
+        if not msg:
+            continue
+        print("agent: ", end="", flush=True)
+        _stream_chat(base, args.session, msg, args.provider, args.recovery)
+
+def _run_serve(args):
+    import uvicorn
+    uvicorn.run("main:app", host=args.host, port=args.port, reload=args.reload, log_level=args.log_level)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="openslock")
+    sub = ap.add_subparsers(dest="cmd")
+
+    # `serve` runs the FastAPI app via uvicorn
+    sp = sub.add_parser("serve", help="run the FastAPI server")
+    sp.add_argument("--host",      default="127.0.0.1")
+    sp.add_argument("--port",      default=DEFAULT_PORT, type=int)
+    sp.add_argument("--reload",    action="store_true")
+    sp.add_argument("--log-level", default="info")
+
+    # `chat` (default) opens the terminal client
+    cp = sub.add_parser("chat", help="open the terminal client (default)")
+    cp.add_argument("--session",  default="default")
+    cp.add_argument("--provider", default=None, choices=["openai", "claude"])
+    cp.add_argument("--recovery", default="natural", choices=["natural", "humor", "explicit"])
+    cp.add_argument("--port",     default=DEFAULT_PORT, type=int)
+
+    # also accept chat flags at the top level so `python main.py --session x` still works
+    ap.add_argument("--session",  default="default")
+    ap.add_argument("--provider", default=None, choices=["openai", "claude"])
+    ap.add_argument("--recovery", default="natural", choices=["natural", "humor", "explicit"])
+    ap.add_argument("--port",     default=DEFAULT_PORT, type=int)
+
+    args = ap.parse_args()
+
+    if args.cmd == "serve":
+        _run_serve(args)
+    else:
+        _run_cli(args)
+
+
+if __name__ == "__main__":
+    main()

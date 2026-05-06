@@ -6,6 +6,7 @@ generate_prefix() is the one function the rest of the code calls.
 It returns (prefix_string, latency_sec).
 """
 
+import re
 import time
 import threading
 from openslock.config import (
@@ -18,6 +19,29 @@ from openslock.config import (
 )
 
 from openslock.templates import MODEL_TEMPLATES
+
+
+# Signals that the small local model is regurgitating training-data garbage
+# (worksheets, exam answers, structured lists, role labels). When any of
+# these match we drop the prefix entirely so the cloud generates cleanly
+# from scratch — the whole point of the prefix is "fast first words", not
+# "derail the cloud with junk".
+_GARBAGE_PATTERNS = [
+    r"^#",                       # markdown headings: "####", "##"
+    r"\b[A-Z]\s*:",              # "A:", "B :", "Q:" — labeled exam answers
+    r"^\s*\d+\s*[.)]\s",         # "1. ", "2) " — numbered list openings
+    r"\(\s*[A-Z]\s*\)",          # "(D)", "(A)"
+    r"→",                        # arrow used in worksheets
+    r"<\|",                      # leaked chat-template tokens
+]
+_GARBAGE_RE = re.compile("|".join(_GARBAGE_PATTERNS))
+
+
+def _looks_like_garbage(text: str) -> bool:
+    if not text:
+        return False
+    head = text[:120]
+    return bool(_GARBAGE_RE.search(head))
 
 _model = None
 _lock  = threading.Lock()
@@ -82,57 +106,21 @@ def generate_prefix(messages, word_count=None):
                 echo=False,
                 stream=False,
             )
-            raw = output["choices"][0]["text"].strip()
-            # hard remove leading pseudo-search garbage
-            for token in ["?", "\n"]:
-                if token in raw[:80]:
-                    left, right = raw.split(token, 1)
+            raw = output["choices"][0]["text"]
 
-                    # if left side looks like junk query continuation
-                    if len(left.split()) <= 12:
-                        raw = right.strip()
-            # remove weird comma-fragments / title-like prefixes
-            if "," in raw[:80]:
-                first, rest = raw.split(",", 1)
+        # Truncate at the first newline — the prefix is meant to be the
+        # opening of a single sentence, not a multi-line block.
+        raw = raw.split("\n", 1)[0]
+        # Strip leading quote/punctuation noise.
+        raw = re.sub(r"^[\s\"'`:;\-*_>#]+", "", raw).strip()
 
-                # if first chunk looks like poetic fluff, drop it
-                if len(first.split()) <= 8:
-                    raw = rest.strip()
-
-            # remove leading quote fragments
-            raw = raw.lstrip('"\':;- ')
-            # remove weird leading pseudo-questions
-            bad_prefixes = [
-                "what does",
-                "what are",
-                "why does",
-                "who is",
-                "how does",
-            ]
-
-            lower = raw.lower()
-
-            for bp in bad_prefixes:
-                if lower.startswith(bp):
-                    splitters = ["\n\n", "\n", ". ", "?"]
-
-                    cut = -1
-                    for s in splitters:
-                        idx = raw.find(s)
-                        if idx != -1:
-                            cut = idx + len(s)
-                            break
-
-                    if cut != -1:
-                        raw = raw[cut:].strip()
-
-                    break
-        # hard cap at word_count words regardless of what the model output
-        import re
-        raw = re.sub(r"^[^\w]+", "", raw).strip()
-        words = raw.split()[:word_count]
-        prefix = " ".join(words).strip()
-        print(f"[local_llm] raw={raw!r}  prefix={prefix!r}")
+        if _looks_like_garbage(raw):
+            print(f"[local_llm] discarding garbage prefix: {raw!r}")
+            prefix = ""
+        else:
+            words = raw.split()[:word_count]
+            prefix = " ".join(words).strip()
+            print(f"[local_llm] raw={raw!r}  prefix={prefix!r}")
     except Exception as e:
         print(f"[local_llm] inference error: {e}")
         prefix = ""

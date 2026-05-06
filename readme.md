@@ -74,19 +74,22 @@ repetitive output from the local model, this is the first thing to try.
 
 ## Run
 
-Start the server:
+Everything runs through `main.py`. The CLI auto-starts the server on first
+use, so a single command is enough:
 
 ```bash
-uvicorn main:app --port 8000
+python main.py
+python main.py --session work          # named session, persists across restarts
+python main.py --provider openai       # force a specific cloud provider
+python main.py --recovery humor        # recovery style when local prefix is off
 ```
 
-Open the CLI in another terminal:
+To run the server in the foreground (e.g. on a separate host):
 
 ```bash
-python cli.py
-python cli.py --session work          # named session, persists across restarts
-python cli.py --provider openai       # force a specific cloud provider
-python cli.py --recovery humor        # recovery style when local prefix is off
+python main.py serve --port 8000
+# or equivalently
+uvicorn main:app --port 8000
 ```
 
 ---
@@ -213,7 +216,7 @@ template doesn't match it. Try `PROMPT_FORMAT=plain`. Also check that
 `repeat_penalty` is in effect — the server console prints the raw local
 model output on each request.
 
-**JSONDecodeError in cli.py**
+**JSONDecodeError in the CLI**
 Update `main.py` — older versions used Python f-strings to build JSON which
 produces invalid output when text contains quotes or special characters.
 The fix is using `json.dumps` for all SSE payloads.
@@ -240,8 +243,7 @@ local_llm.py    llama.cpp wrapper, prefix generation, idle unload
 cloud.py        OpenAI and Claude streaming with continuation logic
 context.py      token counting, overflow detection, recontextualization
 patterns.py     usage pattern learning, reactive hour-based triggers
-main.py         FastAPI app, routes, idle watcher, SSE streaming
-cli.py          terminal client
+main.py         FastAPI app + routes + idle watcher + SSE streaming + CLI client
 ```
 
 Full function-level documentation for each file is in `docs/main.md`.

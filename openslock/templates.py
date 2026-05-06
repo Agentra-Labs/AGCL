@@ -29,11 +29,11 @@ MODEL_TEMPLATES = {
         "format_prompt": lambda messages: _qwen25_prompt(messages),
         "generation": {
             "max_tokens": 6,
-            "temperature": 0.1,
+            "temperature": 0.0,
             "top_p": 0.9,
             "top_k": 20,
             "repeat_penalty": 1.05,
-            "stop": ["<|im_end|>", "<|endoftext|>"],
+            "stop": ["<|im_end|>", "<|endoftext|>", "\n", "####", "Q:", "A:"],
         },
     },
 
@@ -78,7 +78,13 @@ def _smollm2_prompt(messages):
 
 def _qwen25_prompt(messages):
     system_msgs = [m.get("content", "") for m in messages if m.get("role") == "system"]
-    system = system_msgs[-1] if system_msgs else "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."
+    default_system = (
+        "You are a helpful assistant. Begin your reply with a short, natural "
+        "conversational opener (a few words at most) — for example 'Sure,', "
+        "'Of course,', 'Yes,', 'Got it —'. Do not output lists, headings, "
+        "code, examples, or labels like 'Q:' or 'A:'. Just start the sentence."
+    )
+    system = system_msgs[-1] if system_msgs else default_system
 
     parts = [f"<|im_start|>system\n{system}<|im_end|>\n"]
     for role, content in _turns(messages):
