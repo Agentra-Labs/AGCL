@@ -1,5 +1,9 @@
 # nano-cloud-agent
 
+> **First time here? → [docs/guide.md](docs/guide.md)** is a 15-minute
+> step-by-step walkthrough for total beginners (no Python experience
+> assumed). The rest of this readme is a faster technical overview.
+
 A CLI-level daily agent that makes cloud AI feel instant by firing a local nano
 model's first few words immediately, then letting Claude or OpenAI finish the
 response. The local model runs via llama.cpp. The cloud model continues from
