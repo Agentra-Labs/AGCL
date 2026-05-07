@@ -236,16 +236,20 @@ the program. `.env` is read once at startup.
 ## Optional — try the recursive multi-agent feature
 
 This is a separate, more experimental part of the project that chains
-several models together to think in steps. It's documented in
-[recursive_mas_setup.md](recursive_mas_setup.md), but here's the
-30-second version:
+several models together to think in steps. Here's the 30-second
+version:
 
     python main.py recursive validate    # makes sure everything works
     python main.py recursive info        # shows current config
     python main.py recursive run "explain quantum entanglement simply"
 
-Out of the box it uses two copies of your local `.gguf` model. To
-configure different agents, see the linked doc above.
+Out of the box it uses two copies of your local `.gguf` model.
+
+When you're ready to use real HuggingFace models and configure your
+own multi-agent setup, the next walkthrough is
+**[advanced_guide.md](advanced_guide.md)** — same step-by-step style
+as this guide, picks up where this one ends. The dense technical
+reference is in [recursive_mas_setup.md](recursive_mas_setup.md).
 
 ---
 
