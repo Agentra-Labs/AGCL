@@ -120,12 +120,18 @@ class HFBackend(_BackendBase):
             )
             new_ids = out_ids[0, ids.size(1):]
         else:
+            # Append the injected latent at the END of the prompt embeddings.
+            # Prepending shifts every prompt token's RoPE position by one,
+            # which confuses chat-tuned models and often makes them greedy-
+            # decode EOS immediately. Appending preserves the prompt's natural
+            # positions and lets the latent act as the "next thought" the model
+            # generates from.
             embed = self.model.get_input_embeddings()
             e = embed(ids)
             inj = injected.unsqueeze(1).to(e.dtype).to(e.device)
-            e = torch.cat([inj, e], dim=1)
+            e = torch.cat([e, inj], dim=1)
             pad = torch.ones(attn.size(0), 1, device=attn.device, dtype=attn.dtype)
-            attn = torch.cat([pad, attn], dim=1)
+            attn = torch.cat([attn, pad], dim=1)
             out_ids = self.model.generate(
                 inputs_embeds=e, attention_mask=attn,
                 max_new_tokens=max_new_tokens, **gen_kwargs,

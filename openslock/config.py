@@ -1,6 +1,15 @@
 import json
 import os
 
+# Load .env into os.environ before anything else reads getenv.
+import openslock.secrets as _secrets  # noqa: F401
+
+# Project-local HuggingFace cache. Overridable via HF_HOME / HF_HUB_CACHE
+# env vars; default keeps every downloaded model under ./models/hf/ so
+# the project is self-contained and easy to clean up.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.environ.setdefault("HF_HOME", os.path.join(_PROJECT_ROOT, "models", "hf"))
+
 # local model
 LOCAL_MODEL_PATH   = os.getenv("LOCAL_MODEL_PATH", "models/SmolLM2-135M.Q2_K.gguf")
 # local model type

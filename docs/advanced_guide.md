@@ -106,7 +106,18 @@ changing one line in your config.
 `Qwen/Qwen2.5-0.5B-Instruct` — that whole string is the id. The first
 half (`Qwen/`) is the organization, the second half is the model.
 You can paste it straight into our config — `transformers` will
-download and cache it on first use to `~/.cache/huggingface/`.
+download and cache it on first use.
+
+### Where HF models get cached
+
+By default this project caches HF downloads to `models/hf/` inside the
+project root (set automatically in `config.py` via `HF_HOME`). The
+folder is gitignored, so models stay out of git, and one
+`rm -rf models/hf/` cleans every download. To use the system-wide
+cache instead, override:
+
+    export HF_HOME=~/.cache/huggingface
+    # or point HF_HUB_CACHE wherever you want
 
 If you want to peek before downloading, paste the id at the end of
 `https://huggingface.co/` (e.g.

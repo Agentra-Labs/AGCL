@@ -1,0 +1,18 @@
+{
+  "agents": [
+    {
+      "backend": "hf",
+      "model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "role": "planner",
+      "device": "cpu",
+      "dtype": "float32"
+    },
+    {
+      "backend": "hf",
+      "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "role": "solver",
+      "device": "cpu",
+      "dtype": "float32"
+    }
+  ]
+}

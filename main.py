@@ -305,18 +305,40 @@ def main():
                     help="prompt for `recursive run`")
     rp.add_argument("--max-new-tokens", type=int, default=128)
 
+    # `autoconfig` sets up a fresh checkout for HF RecursiveMAS
+    ap_auto = sub.add_parser("autoconfig",
+        help="set up project files for HF RecursiveMAS (idempotent)")
+    ap_auto.add_argument("--force", action="store_true",
+        help="overwrite mas.json even if it exists")
+    ap_auto.add_argument("--install-deps", action="store_true",
+        help="pip install transformers if missing")
+    ap_auto.add_argument("--download", action="store_true",
+        help="pre-download the canonical HF models (~3 GB)")
+
     # also accept chat flags at the top level so `python main.py --session x` still works
     ap.add_argument("--session",  default="default")
     ap.add_argument("--provider", default=None, choices=["openai", "claude"])
     ap.add_argument("--recovery", default="natural", choices=["natural", "humor", "explicit"])
     ap.add_argument("--port",     default=DEFAULT_PORT, type=int)
+    # top-level shortcut so `python main.py --autoconfig` works without a subcommand
+    ap.add_argument("--autoconfig", action="store_true",
+        help="run autoconfig and exit (equivalent to: autoconfig)")
 
     args = ap.parse_args()
+
+    if args.autoconfig:
+        from openslock.autoconfig import run as run_autoconfig
+        sys.exit(run_autoconfig())
 
     if args.cmd == "serve":
         _run_serve(args)
     elif args.cmd == "recursive":
         _run_recursive(args)
+    elif args.cmd == "autoconfig":
+        from openslock.autoconfig import run as run_autoconfig
+        sys.exit(run_autoconfig(
+            force=args.force, install_deps=args.install_deps, download=args.download,
+        ))
     else:
         _run_cli(args)
 

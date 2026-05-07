@@ -43,6 +43,12 @@ def _load_dotenv(path: Path) -> Dict[str, str]:
 
 _DOTENV = _load_dotenv(_ENV_PATH)
 
+# Promote .env entries into os.environ so that any module reading via
+# os.getenv (config.py, etc.) sees them uniformly. Process env always
+# wins — we never overwrite a value that's already set.
+for _k, _v in _DOTENV.items():
+    os.environ.setdefault(_k, _v)
+
 
 def get(name: str, default: str = "") -> str:
     """Look up a secret. Process env wins; then .env; then default."""
