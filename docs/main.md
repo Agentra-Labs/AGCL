@@ -21,12 +21,15 @@ model) before you even open the CLI.
 ## File map
 
     config.py       all settings, read by every other file
+    secrets.py      .env loader (API keys, MAS_* env vars)
+    autoconfig.py   one-shot project setup for the RecursiveMAS feature
     state.py        in-memory sessions, disk flush, idle detection
     pressure.py     API request rate + latency tracker
     local_llm.py    llama.cpp wrapper, prefix generation, idle unload
     cloud.py        OpenAI + Claude streaming with continuation logic
     context.py      token counting, overflow detection, recontextualization
     patterns.py     usage pattern learning, reactive hour-based triggers
+    recursive/      recursive multi-agent system (latent-space reasoning)
     main.py         FastAPI app, routes, idle watcher, SSE streaming
     cli.py          terminal client for testing
     requirements.txt

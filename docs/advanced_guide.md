@@ -40,6 +40,23 @@ You pick the models, the roles, and how many "rounds" they loop for.
 
 ---
 
+## Shortcut — one-command setup
+
+If you want the canonical setup this whole guide builds toward
+(Qwen2.5-0.5B + TinyLlama-1.1B, sequential, 2 rounds), one command
+puts every file in place:
+
+    python main.py autoconfig --install-deps --download
+
+That does steps 1, 4, 5, and the model download in one shot. Skip
+ahead to step 6 once it finishes.
+
+If you'd rather understand each piece (or want a different model
+mix), keep reading from step 1 — `autoconfig` is just a wrapper
+around what the rest of this guide does manually.
+
+---
+
 ## Step 1 — Install transformers
 
 The base project doesn't pull in HuggingFace `transformers` because
@@ -409,6 +426,11 @@ use `mas.generate_text(..., do_sample=False)`).
 ---
 
 ## Useful commands cheat-sheet
+
+    python main.py autoconfig                          # one-shot project setup
+    python main.py autoconfig --install-deps           # also pip install transformers
+    python main.py autoconfig --download               # also pre-pull HF models
+    python main.py autoconfig --force                  # overwrite mas.json
 
     python main.py recursive validate                  # run all 21 checks
     python main.py recursive info                      # show resolved config

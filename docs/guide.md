@@ -236,14 +236,26 @@ the program. `.env` is read once at startup.
 ## Optional — try the recursive multi-agent feature
 
 This is a separate, more experimental part of the project that chains
-several models together to think in steps. Here's the 30-second
-version:
+several models together to think in steps. The fastest way to set it
+up is one command:
 
-    python main.py recursive validate    # makes sure everything works
-    python main.py recursive info        # shows current config
+    python main.py autoconfig --install-deps
+
+That:
+- creates a `mas.json` config file with two HuggingFace models
+- adds the right settings to your `.env`
+- creates `models/hf/` (where models will cache, kept inside the
+  project so it's easy to clean up later)
+- installs `transformers` if you don't have it
+- runs a self-test (should print `21/21 tests passed`)
+
+After that:
+
+    python main.py recursive info                   # shows current config
     python main.py recursive run "explain quantum entanglement simply"
 
-Out of the box it uses two copies of your local `.gguf` model.
+The first run will download two small models (~3 GB total) into
+`models/hf/`. Subsequent runs use the cached copies.
 
 When you're ready to use real HuggingFace models and configure your
 own multi-agent setup, the next walkthrough is

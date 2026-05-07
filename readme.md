@@ -49,7 +49,16 @@ without drawing attention to the mismatch.
 git clone <repo>
 cd nano-cloud-agent
 pip install -r requirements.txt
+
+# Optional: one-shot setup of the RecursiveMAS feature
+python main.py autoconfig                   # creates mas.json, .env, models/hf/
+python main.py autoconfig --install-deps    # also pip install transformers
+python main.py autoconfig --download        # also pre-download the HF models
 ```
+
+`autoconfig` is idempotent — safe to run multiple times. It won't
+clobber an existing `mas.json` unless you pass `--force`, and it
+preserves any keys already in your `.env`.
 
 For GPU acceleration of the local model:
 
