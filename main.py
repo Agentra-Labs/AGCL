@@ -235,6 +235,51 @@ def _run_serve(args):
     uvicorn.run("main:app", host=args.host, port=args.port, reload=args.reload, log_level=args.log_level)
 
 
+def _run_recursive(args):
+    """Recursive-MAS feature: validate, inspect config, or run a prompt."""
+    from openslock.recursive import validate as rv
+
+    if args.action == "validate":
+        ok = rv.run_all()
+        sys.exit(0 if ok else 1)
+
+    if args.action == "info":
+        from openslock import config as cfg
+        print("recursive MAS modules:")
+        print("  InnerLink, OuterLink              — projection links")
+        print("  HFBackend, GGUFBackend            — model backends")
+        print("  RecursiveAgent, RecursiveMAS      — agent wrapper + loop controller")
+        print("  build_from_config / build_mas_from_specs / build_agent")
+        print("  stage1_warmup_inner, stage2_full_loop")
+        print()
+        print("config:")
+        print(f"  MAS_PATTERN = {cfg.MAS_PATTERN}")
+        print(f"  MAS_ROUNDS  = {cfg.MAS_ROUNDS}")
+        print(f"  MAS_DEVICE  = {cfg.MAS_DEVICE}")
+        print(f"  MAS_DTYPE   = {cfg.MAS_DTYPE}")
+        print(f"  MAS_AGENTS  ({len(cfg.MAS_AGENTS)}):")
+        for i, s in enumerate(cfg.MAS_AGENTS):
+            print(f"    [{i}] backend={s.get('backend')}  role={s.get('role','')}  model={s.get('model','')}")
+        print()
+        print("run  python main.py recursive validate  to verify the implementation.")
+        print("run  python main.py recursive run \"your prompt\"  to use the configured MAS.")
+        return
+
+    if args.action == "run":
+        from openslock.recursive import build_from_config
+        prompt = args.prompt or input("prompt: ")
+        if not prompt.strip():
+            print("empty prompt"); sys.exit(1)
+        print("[mas] building from config...")
+        mas = build_from_config()
+        print(f"[mas] {len(mas.agents)} agents, {mas.n_rounds} rounds, dims={mas.dims}")
+        print("[mas] running loop...")
+        out = mas.generate_text(prompt, max_new_tokens=args.max_new_tokens)
+        print()
+        print(out if isinstance(out, str) else out)
+        return
+
+
 def main():
     ap = argparse.ArgumentParser(prog="openslock")
     sub = ap.add_subparsers(dest="cmd")
@@ -253,6 +298,13 @@ def main():
     cp.add_argument("--recovery", default="natural", choices=["natural", "humor", "explicit"])
     cp.add_argument("--port",     default=DEFAULT_PORT, type=int)
 
+    # `recursive` exposes the recursive-MAS feature
+    rp = sub.add_parser("recursive", help="recursive multi-agent system feature")
+    rp.add_argument("action", choices=["validate", "info", "run"], nargs="?", default="validate")
+    rp.add_argument("prompt", nargs="?", default=None,
+                    help="prompt for `recursive run`")
+    rp.add_argument("--max-new-tokens", type=int, default=128)
+
     # also accept chat flags at the top level so `python main.py --session x` still works
     ap.add_argument("--session",  default="default")
     ap.add_argument("--provider", default=None, choices=["openai", "claude"])
@@ -263,6 +315,8 @@ def main():
 
     if args.cmd == "serve":
         _run_serve(args)
+    elif args.cmd == "recursive":
+        _run_recursive(args)
     else:
         _run_cli(args)
 

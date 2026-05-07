@@ -51,14 +51,24 @@ CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall
 
 ## Setup
 
-Set environment variables before running. The only required ones are your API
-key and model path. Everything else has a working default.
+API keys live in a gitignored `.env` file at the project root, loaded by
+`openslock/secrets.py`. Copy the template and fill it in:
+
+```bash
+cp .env.example .env
+# then edit .env and add your key(s)
+```
+
+Other settings are environment variables. Required: `LOCAL_MODEL_PATH` for
+the local prefix model. Everything else has a working default.
 
 ```bash
 export LOCAL_MODEL_PATH=models/your-model.gguf
-export ANTHROPIC_API_KEY=sk-ant-...        # or OPENAI_API_KEY
 export DEFAULT_CLOUD=claude                 # or openai
 ```
+
+You can still pass keys via env vars (or any secret manager) — process env
+vars override the `.env` file. Never commit `.env`.
 
 If your model is not instruction-tuned (i.e. it's a base model, not a chat
 model), also set:
@@ -243,7 +253,41 @@ local_llm.py    llama.cpp wrapper, prefix generation, idle unload
 cloud.py        OpenAI and Claude streaming with continuation logic
 context.py      token counting, overflow detection, recontextualization
 patterns.py     usage pattern learning, reactive hour-based triggers
+recursive/      recursive multi-agent reasoning in latent space
 main.py         FastAPI app + routes + idle watcher + SSE streaming + CLI client
 ```
 
 Full function-level documentation for each file is in `docs/main.md`.
+
+---
+
+## RecursiveMAS
+
+`openslock/recursive/` implements recursive multi-agent reasoning that
+passes latent embeddings between agents instead of text. Two small
+residual MLPs (`InnerLink`, `OuterLink`) sit between the agents; the loop
+unrolls n rounds and only the final agent decodes text.
+
+Two backends — pick per agent in `config.py`:
+
+- `hf` — HuggingFace transformers. Full latent injection, full backprop.
+- `gguf` — llama-cpp-python. Inference only.
+
+Configure via env vars (`MAS_AGENTS`, `MAS_PATTERN`, `MAS_ROUNDS`,
+`MAS_DEVICE`, `MAS_DTYPE`), via a JSON file (`MAS_CONFIG_FILE`), or
+programmatically with `RecursiveAgent.from_pretrained` /
+`RecursiveAgent.from_gguf` / `build_mas_from_specs`.
+
+```
+python main.py recursive validate    # 21 runnable checks
+python main.py recursive info        # show resolved config
+python main.py recursive run "..."   # build from config and run
+```
+
+Patterns: `sequential` (planner → critic → solver), `moe`,
+`distill` (teacher → student), `deliberation`, `custom`.
+
+Full setup walkthrough — mixing HF and GGUF agents, all 4 patterns,
+training, troubleshooting — is in
+[`docs/recursive_mas_setup.md`](docs/recursive_mas_setup.md). Module
+breakdown is in [`docs/main.md`](docs/main.md).

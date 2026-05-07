@@ -5,3 +5,5 @@ llama-cpp-python>=0.2.77
 openai>=1.30.0
 anthropic>=0.28.0
 tiktoken>=0.7.0        # optional but gives real token counts
+torch>=2.0             # required by openslock.recursive (InnerLink/OuterLink/RecursiveMAS)
+# transformers>=4.40   # optional — only needed if you call RecursiveAgent.from_pretrained

@@ -493,12 +493,85 @@ connection error immediately.
     openai              OpenAI SDK
     anthropic           Anthropic SDK
     tiktoken            accurate token counting (optional but recommended)
+    torch               required by openslock.recursive
+    transformers        optional, only for RecursiveAgent.from_pretrained
 
 To install:
     pip install -r requirements.txt
 
 For llama-cpp-python with GPU support, install separately:
     CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python
+
+---
+
+## openslock/recursive/  (RecursiveMAS)
+
+Recursive multi-agent reasoning that passes latent embeddings between agents
+instead of round-tripping through text. Two small projection MLPs sit between
+the agents:
+
+    InnerLink   same-agent latent recurrence
+                R_in(h) = h + W2 GELU(W1 h)
+
+    OuterLink   cross-agent transfer (handles dim mismatch)
+                R_out(h) = W3 h + W2 GELU(W1 h)
+
+W2 starts at zero so both links are exactly the identity at init — training
+stays stable because the residual branch carries gradient even when the MLP
+output is small.
+
+Files:
+
+    links.py     InnerLink, OuterLink (paper equations)
+    agent.py     RecursiveAgent — wraps a causal LM, exposes the last
+                 hidden state and accepts an injected latent as a virtual
+                 prepended token via inputs_embeds
+    mas.py       RecursiveMAS — loop controller for n recursion rounds.
+                 Cold-starts at agent 0, then OuterLink per cross-agent
+                 hop and InnerLink per same-agent step, with a wrap-around
+                 OuterLink for round transitions. Only the final agent
+                 decodes text.
+    patterns.py  sequential / mixture_of_experts / distillation /
+                 deliberation builders — same loop, different roles.
+    train.py     stage1_warmup_inner (frozen agent, cosine-sim loss vs
+                 target embedding) and stage2_full_loop (fully unrolled
+                 cross-entropy on the final logits)
+    validate.py  12 runnable tests that verify behavior end to end:
+                 identity-at-init, param counts, shape mapping, loss
+                 actually decreases for each link, the MAS loop runs and
+                 produces the right shape, latent evolves across rounds,
+                 stage-1/stage-2 helpers train, all four patterns build.
+
+Backends:
+
+    HFBackend      transformers + torch. Full latent injection, full backprop.
+    GGUFBackend    llama-cpp-python, inference only. Latent injection is
+                   silently dropped at gguf agents' inputs (no inputs_embeds
+                   in llama.cpp); the latent still flows through the loop
+                   via the gguf agent's own output embedding.
+
+Config (in config.py):
+
+    MAS_AGENTS    JSON-array of agent specs, or use MAS_CONFIG_FILE
+    MAS_PATTERN   sequential | moe | distill | deliberation | custom
+    MAS_ROUNDS    number of recursion rounds (default 2)
+    MAS_DEVICE    default device for hf agents that don't set their own
+    MAS_DTYPE     default dtype for hf agents
+
+Each agent spec:
+
+    {"backend": "hf"|"gguf", "model": "<HF id or path>", "role": "...",
+     "dtype": "float32",  "device": "cpu",                   # hf
+     "n_ctx": 2048, "n_gpu_layers": 0, "n_threads": 4}        # gguf
+
+CLI:
+
+    python main.py recursive validate              # runs the suite, exits 1 on fail
+    python main.py recursive info                  # lists modules + resolved config
+    python main.py recursive run "your prompt"     # build from config and run
+
+Full setup walkthrough (mixed HF/GGUF chains, all 4 patterns, training,
+troubleshooting): see  docs/recursive_mas_setup.md.
 
 To run:
     uvicorn main:app --port 8000 --reload
