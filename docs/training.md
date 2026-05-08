@@ -14,6 +14,9 @@ of "vectors" and "loss" is enough.
 > - **[guide.md](guide.md)** — first-time setup (you are here if you've
 >   already done the 15-minute beginner walkthrough)
 > - **[configuration.md](configuration.md)** — what every knob does
+> - **[integration.md](integration.md)** — node API for GUI integration
+>   (the SSE events you stream to the GUI map directly to the steps
+>   in this doc)
 > - **[advanced_guide.md](advanced_guide.md)** — choosing models &
 >   patterns
 > - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse

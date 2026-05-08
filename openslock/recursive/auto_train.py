@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import List, Optional, Tuple, Callable
+from typing import Callable, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -151,7 +151,8 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                reformulations: List[str],
                stage1_steps: int = 30, stage2_steps: int = 20,
                lr1: float = 1e-2, lr2: float = 1e-3,
-               verbose: bool = True) -> dict:
+               verbose: bool = True,
+               on_progress: Optional[Callable[[dict], None]] = None) -> dict:
     """
     Run two-stage cloud-teacher training in place. Returns a dict of
     per-step losses for each stage.
@@ -162,6 +163,13 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
     with the loop-produced latent appended at the prompt boundary.
     """
     final_agent = mas.agents[-1]
+
+    def _emit(ev: dict) -> None:
+        if on_progress is not None:
+            try:
+                on_progress(ev)
+            except Exception:
+                pass  # progress callbacks must never break training
 
     restore = _freeze_agents(mas)
     try:
@@ -179,6 +187,7 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
         # ---- stage A: cosine alignment ----
         s1: List[float] = []
         if stage1_steps > 0:
+            _emit({"event": "stage1_start", "total_steps": stage1_steps})
             opt = torch.optim.AdamW(link_params, lr=lr1)
             for step in range(stage1_steps):
                 text = prompts[step % len(prompts)]
@@ -188,9 +197,14 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                 opt.zero_grad(); loss.backward(); opt.step()
                 v = float(loss.item())
                 s1.append(v)
+                _emit({"event": "stage1_step", "step": step + 1,
+                       "total_steps": stage1_steps, "loss": v})
                 if verbose and (step == 0 or step + 1 == stage1_steps
                                 or (step + 1) % 10 == 0):
                     print(f"  [stage A] {step+1:3d}/{stage1_steps}  cos-loss={v:.4f}")
+            _emit({"event": "stage1_done",
+                   "first_loss": s1[0] if s1 else None,
+                   "final_loss": s1[-1] if s1 else None})
 
         # ---- stage B: token CE through final HF agent ----
         s2: List[float] = []
@@ -203,7 +217,10 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
             if ans_ids.numel() < 2:
                 if verbose:
                     print("  [stage B] answer < 2 tokens, skipping")
+                _emit({"event": "stage2_skipped",
+                       "reason": "answer tokenized to < 2 tokens"})
             else:
+                _emit({"event": "stage2_start", "total_steps": stage2_steps})
                 opt2 = torch.optim.AdamW(link_params, lr=lr2)
                 embed = model.get_input_embeddings()
                 for step in range(stage2_steps):
@@ -233,11 +250,19 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                     opt2.zero_grad(); loss.backward(); opt2.step()
                     v = float(loss.item())
                     s2.append(v)
+                    _emit({"event": "stage2_step", "step": step + 1,
+                           "total_steps": stage2_steps, "loss": v})
                     if verbose and (step == 0 or step + 1 == stage2_steps
                                     or (step + 1) % 5 == 0):
                         print(f"  [stage B] {step+1:3d}/{stage2_steps}  ce={v:.4f}")
-        elif stage2_steps > 0 and verbose:
-            print("  [stage B] final agent is GGUF — skipped")
+                _emit({"event": "stage2_done",
+                       "first_loss": s2[0] if s2 else None,
+                       "final_loss": s2[-1] if s2 else None})
+        elif stage2_steps > 0:
+            if verbose:
+                print("  [stage B] final agent is GGUF — skipped")
+            _emit({"event": "stage2_skipped",
+                   "reason": "final agent is GGUF"})
 
         return {"stage1_losses": s1, "stage2_losses": s2}
     finally:

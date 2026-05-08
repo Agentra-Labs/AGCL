@@ -11,6 +11,7 @@ It assumes you've at least run the project once. If not, start at
 > Other docs:
 > - **[guide.md](guide.md)** — first-time setup
 > - **[training.md](training.md)** — what auto-training actually does
+> - **[integration.md](integration.md)** — node API for GUI integration
 > - **[advanced_guide.md](advanced_guide.md)** — picking models and
 >   patterns
 > - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse

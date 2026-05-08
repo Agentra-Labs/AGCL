@@ -18,6 +18,7 @@ If you only want to confirm the implementation works, skip to the bottom:
 >   patterns, training
 > - **[training.md](training.md)** — what auto-training does, step
 >   by step
+> - **[integration.md](integration.md)** — node API for GUI integration
 > - **[main.md](main.md)** — per-file code reference
 
 

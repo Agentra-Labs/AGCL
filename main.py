@@ -19,6 +19,7 @@ Endpoints:
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -235,6 +236,45 @@ def _run_serve(args):
     uvicorn.run("main:app", host=args.host, port=args.port, reload=args.reload, log_level=args.log_level)
 
 
+def _run_node(args):
+    """
+    Open this PC's openslock install to an authorized GUI client. Generates
+    (or reuses) a bearer auth key and starts the node FastAPI server.
+
+    The user runs this on their own computer:
+        python main.py node --port 9876
+    and pastes the printed key into a remote GUI on the same machine.
+    """
+    import uvicorn
+    from openslock.node import build_node_app, current_key
+
+    custom = args.auth_key or os.environ.get("OPENSLOCK_NODE_AUTH") or None
+    cors = [o.strip() for o in args.cors.split(",") if o.strip()] or ["*"]
+
+    # Build the app once so the key is fixed before we hand off to uvicorn.
+    build_node_app(auth_key=custom, cors_origins=cors)
+
+    print()
+    print("=" * 60)
+    print("  openslock node — ready")
+    print("=" * 60)
+    print(f"  bind:        {args.bind}:{args.port}")
+    print(f"  cors:        {', '.join(cors)}")
+    print(f"  auth key:    {current_key()}")
+    print()
+    print("  paste the auth key above into your GUI to authorize this PC.")
+    print("  every request must send:  Authorization: Bearer <key>")
+    print("  killing this process invalidates the key.")
+    print("=" * 60)
+    print()
+
+    uvicorn.run(
+        "main:app",
+        host=args.bind, port=args.port,
+        log_level=args.log_level,
+    )
+
+
 def _run_recursive(args):
     """Recursive-MAS feature: validate, inspect config, or run a prompt."""
     from openslock.recursive import validate as rv
@@ -436,6 +476,20 @@ def main():
     rp.add_argument("--no-persist", action="store_true",
                     help="do not save trained links / centroids to disk")
 
+    # `node` opens this PC to an authorized GUI client over HTTP+SSE
+    np = sub.add_parser("node",
+        help="open this PC to an authorized GUI client (bearer auth + CORS)")
+    np.add_argument("--bind",      default="127.0.0.1",
+        help="interface to bind (default 127.0.0.1; use 0.0.0.0 to expose)")
+    np.add_argument("--port",      default=9876, type=int,
+        help="port to listen on (default 9876; editable)")
+    np.add_argument("--auth-key",  default=None,
+        help="reuse a specific auth key (overrides OPENSLOCK_NODE_AUTH)")
+    np.add_argument("--cors",      default="*",
+        help="comma-separated CORS origins; default '*' (browser-friendly)")
+    np.add_argument("--log-level", default="warning",
+        help="uvicorn log level (info|warning|error)")
+
     # `autoconfig` sets up a fresh checkout for HF RecursiveMAS
     ap_auto = sub.add_parser("autoconfig",
         help="set up project files for HF RecursiveMAS (idempotent)")
@@ -469,6 +523,8 @@ def main():
 
     if args.cmd == "serve":
         _run_serve(args)
+    elif args.cmd == "node":
+        _run_node(args)
     elif args.cmd == "recursive":
         _run_recursive(args)
     elif args.cmd == "autoconfig":

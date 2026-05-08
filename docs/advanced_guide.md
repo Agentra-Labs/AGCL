@@ -19,6 +19,7 @@ several GB.
 >   explained simply (great if you skipped that)
 > - **[training.md](training.md)** — what auto-training does, step
 >   by step
+> - **[integration.md](integration.md)** — node API for GUI integration
 > - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
 >   reference
 > - **[main.md](main.md)** — per-file code reference

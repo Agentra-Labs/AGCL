@@ -8,6 +8,7 @@
 > | Understand every config knob in plain English | **[docs/configuration.md](docs/configuration.md)** — friendly reference |
 > | Set up the recursive multi-agent feature with real models | **[docs/advanced_guide.md](docs/advanced_guide.md)** — picking models step by step |
 > | Understand what auto-training is doing under the hood | **[docs/training.md](docs/training.md)** — the `[stage A]` / `[stage B]` lines explained |
+> | **Integrate this PC into a GUI / web frontend** | **[docs/integration.md](docs/integration.md)** — node API, auth, SSE events, every editable config |
 > | Get a terse technical reference for the multi-agent feature | **[docs/recursive_mas_setup.md](docs/recursive_mas_setup.md)** |
 > | See what every code file does | **[docs/main.md](docs/main.md)** |
 >
@@ -426,8 +427,29 @@ Deeper docs:
 - [`docs/training.md`](docs/training.md) — exactly what auto-training
   does on each turn (the `[stage A]` / `[stage B]` lines you see in
   the terminal)
+- [`docs/integration.md`](docs/integration.md) — node-server API for
+  GUI integration (bearer auth, CORS, full `/node/*` reference, SSE
+  events, every editable config mapped)
 - [`docs/advanced_guide.md`](docs/advanced_guide.md) — picking models,
   mixing HF + GGUF, manual training, all 4 patterns
 - [`docs/recursive_mas_setup.md`](docs/recursive_mas_setup.md) — terse
   technical reference
 - [`docs/main.md`](docs/main.md) — per-file code reference
+
+---
+
+## Node mode (open this PC to a GUI)
+
+To use openslock as a backend for a separate GUI / web app, run it in
+**node mode**:
+
+```bash
+python main.py node --port 9876
+```
+
+This starts a FastAPI server with bearer-token auth and CORS enabled,
+exposes the full editable config + the recursive MAS runtime + topic
+index over HTTP, and prints a one-time auth key. Paste that key into
+your GUI to authorize. Full integration contract (every endpoint,
+SSE event format, editable-config table) is in
+[`docs/integration.md`](docs/integration.md).

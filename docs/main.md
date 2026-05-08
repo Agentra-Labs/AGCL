@@ -10,6 +10,8 @@ sections as a reference when you need to find or change something specific.
 >   plain English
 > - **[training.md](training.md)** — what auto-training does, step
 >   by step
+> - **[integration.md](integration.md)** — node-server API for GUI
+>   integration
 > - **[advanced_guide.md](advanced_guide.md)** — picking models and
 >   patterns
 > - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
@@ -42,6 +44,7 @@ instead of redoing it.
     secrets.py           .env loader (API keys, MAS_* env vars)
     autoconfig.py        one-shot canonical setup for the RecursiveMAS feature
     configurator.py      interactive wizard for custom MAS setups
+    node.py              auth + CORS-gated FastAPI surface for GUI integration
     state.py             in-memory sessions, disk flush, idle detection
     pressure.py          API request rate + latency tracker
     local_llm.py         llama.cpp wrapper, prefix generation, idle unload

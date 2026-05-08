@@ -14,6 +14,8 @@ You will need about 15 minutes and an internet connection.
 >   multi-agent feature with real models
 > - **[training.md](training.md)** — what happens when the recursive
 >   feature trains on a question
+> - **[integration.md](integration.md)** — node API for GUI / web
+>   frontend integration
 > - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
 >   technical reference
 > - **[main.md](main.md)** — per-file code reference
