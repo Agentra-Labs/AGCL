@@ -86,3 +86,31 @@ MAS_PATTERN = os.getenv("MAS_PATTERN", "sequential")     # sequential|moe|distil
 MAS_ROUNDS  = int(os.getenv("MAS_ROUNDS", "2"))
 MAS_DEVICE  = os.getenv("MAS_DEVICE", "cpu")             # default device for hf agents that don't set their own
 MAS_DTYPE   = os.getenv("MAS_DTYPE",  "float32")         # default dtype for hf agents
+
+
+# -------------------- mini-model background trainer --------------------
+#
+# Optional. When MINI_ENABLED=1, a tiny pluggable model trains in the
+# background off latents + reasoning trajectories captured during normal
+# AGCL use. Designed to be cheap on CPU (low priority, sleep between
+# steps) and pause/resume cleanly. See docs/minimodel.md.
+
+MINI_ENABLED      = os.getenv("MINI_ENABLED", "0").strip() in ("1", "true", "True", "yes", "on")
+MINI_AUTOSTART    = os.getenv("MINI_AUTOSTART", "1").strip() in ("1", "true", "True", "yes", "on")
+MINI_ARCH         = os.getenv("MINI_ARCH", "transformer")    # "transformer" | "mlp"
+MINI_HIDDEN       = int(os.getenv("MINI_HIDDEN", "128"))
+MINI_LAYERS       = int(os.getenv("MINI_LAYERS", "2"))
+MINI_HEADS        = int(os.getenv("MINI_HEADS", "4"))
+MINI_MAX_SEQ      = int(os.getenv("MINI_MAX_SEQ", "256"))
+MINI_VOCAB        = int(os.getenv("MINI_VOCAB", "8192"))
+MINI_ATTENTION    = os.getenv("MINI_ATTENTION", "causal")    # causal|full|sliding|banded|dilated
+MINI_WINDOW       = int(os.getenv("MINI_WINDOW", "64"))      # used by sliding/banded/dilated
+MINI_STRATEGY     = os.getenv("MINI_STRATEGY", "ce_plus_latent")  # see agcl/mini/strategies.py
+MINI_LR           = float(os.getenv("MINI_LR", "3e-4"))
+MINI_BUFFER_SIZE  = int(os.getenv("MINI_BUFFER_SIZE", "1024"))
+MINI_BATCH_SIZE   = int(os.getenv("MINI_BATCH_SIZE", "2"))
+MINI_YIELD_MS     = int(os.getenv("MINI_YIELD_MS", "200"))   # sleep between steps so main work has CPU
+MINI_NICE         = int(os.getenv("MINI_NICE", "15"))        # POSIX niceness (higher = lower priority)
+MINI_CKPT_INTERVAL = int(os.getenv("MINI_CKPT_INTERVAL", "50"))
+MINI_STATE_DIR    = os.getenv("MINI_STATE_DIR", os.path.join(STATE_DIR, "mini"))
+os.makedirs(MINI_STATE_DIR, exist_ok=True)

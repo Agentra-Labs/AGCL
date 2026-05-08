@@ -132,6 +132,37 @@ class RecursiveSession:
     async def turn(self, user_msg: str, *, force_cloud: bool = False,
                    force_continue: bool = False,
                    on_progress: Optional[Callable[[dict], None]] = None) -> str:
+        # Wrapper around the real turn so the mini-trainer hook fires at
+        # exactly one place regardless of which generation path returns.
+        self._last_reforms: List[str] = []
+        self._last_reasoning: str = ""
+        out = await self._turn_inner(
+            user_msg, force_cloud=force_cloud,
+            force_continue=force_continue, on_progress=on_progress,
+        )
+        self._feed_mini(user_msg, out)
+        return out
+
+    def _feed_mini(self, prompt: str, output: str) -> None:
+        """Send the (prompt, output, latent, reforms) sample to the mini
+        trainer if enabled. Best-effort - never raises into turn()."""
+        try:
+            from agcl.mini import runtime as _mini
+            latent_t = None
+            snap = self.control.latent_snapshot()
+            if snap is not None and snap.get("values"):
+                latent_t = torch.tensor(snap["values"]).reshape(1, -1).float()
+            _mini.append_sample(
+                prompt=prompt, output=output, latent=latent_t,
+                reformulations=self._last_reforms,
+                reasoning=self._last_reasoning,
+            )
+        except Exception:
+            pass
+
+    async def _turn_inner(self, user_msg: str, *, force_cloud: bool = False,
+                           force_continue: bool = False,
+                           on_progress: Optional[Callable[[dict], None]] = None) -> str:
         def _emit(ev: dict) -> None:
             if on_progress is not None:
                 try:
@@ -328,6 +359,10 @@ class RecursiveSession:
             n_reformulations=self.n_reformulations,
             provider=self.provider,
         )
+        # Stash for the mini-trainer hook in turn(): reformulations are
+        # high-signal training data and we only get them on bootstrap turns.
+        self._last_reforms = list(reforms or [])
+        self._last_reasoning = answer or ""
         _emit({"event": "bootstrap_done",
                "answer_chars": len(answer),
                "n_reformulations": len(reforms)})

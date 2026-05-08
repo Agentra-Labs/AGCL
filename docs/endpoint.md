@@ -316,7 +316,70 @@ t.join()
 
 ---
 
-## 6. CLI parity in the TUI
+## 7. Mini-model control endpoints
+
+The optional background mini-trainer (see
+[minimodel.md](minimodel.md)) exposes its own slice of `/node/mini/*`
+routes. All require auth.
+
+| Endpoint | Effect |
+|---|---|
+| `GET  /node/mini/status`     | Step count, last loss, buffer fill, paused/running flags |
+| `GET  /node/mini/config`     | Current `MiniConfig` dataclass as JSON |
+| `PATCH /node/mini/config`    | Partial update; auto-rebuilds if arch-shaping fields change |
+| `POST /node/mini/start`      | Enable + spin up the background thread |
+| `POST /node/mini/stop`       | Halt the trainer (joins thread within 5s) |
+| `POST /node/mini/pause`      | Suspend (resumable) |
+| `POST /node/mini/resume`     | Resume after pause |
+| `POST /node/mini/test`       | Body: `{prompt, max_new?, temperature?}` -> generate |
+| `POST /node/mini/checkpoint` | Force save to `MINI_STATE_DIR/model.pt` |
+| `GET  /node/mini/presets`    | Strategies, attention presets, archs |
+
+Status payload:
+
+```json
+{
+  "enabled":      true,
+  "running":      true,
+  "paused":       false,
+  "step":         137,
+  "last_loss":    0.482,
+  "loss_recent":  [0.49, 0.485, 0.482, ...],
+  "samples_seen": 412,
+  "buffer":       16,
+  "buffer_max":   1024,
+  "arch":         "transformer",
+  "strategy":     "ce_plus_latent",
+  "attention":    "causal",
+  "started_at":   1715300000.0,
+  "error":        null
+}
+```
+
+PATCH example - swap to a sliding-window attention with smaller LR:
+
+```http
+PATCH /node/mini/config
+Authorization: Bearer KEY
+Content-Type: application/json
+
+{"attention": "sliding", "window": 32, "lr": 1e-4}
+```
+
+```json
+{
+  "ok": true,
+  "applied": ["attention", "window", "lr"],
+  "requires_rebuild": true
+}
+```
+
+`requires_rebuild: true` means the trainer just got torn down and
+re-instantiated under the hood; you don't need to do anything.
+
+---
+
+## 8. CLI parity in the TUI
 
 Every control endpoint has a matching slash command in the persistent
 TUI shell:
@@ -329,6 +392,12 @@ TUI shell:
 | `/status` | `/status` |
 | `/latent` | `/latent` |
 | `/node/plugins` | `plugins` from the main menu |
+| `/node/mini/status` | `/mini-status` (or `minimodel` menu) |
+| `/node/mini/start` | `/mini-start` |
+| `/node/mini/stop` | `/mini-stop` |
+| `/node/mini/pause` | `/mini-pause` |
+| `/node/mini/resume` | `/mini-resume` |
+| `/node/mini/test` | `/mini-test <prompt>` |
 
 The linter recognizes all of them; typos surface a "did you mean ...?"
 hint instead of a silent failure.

@@ -1,4 +1,22 @@
-# agcl
+<p align="center">
+  <img src="icon.png" alt="AGCL - Agentic CLI" width="220" />
+</p>
+
+<h1 align="center">AGCL - Agentic CLI</h1>
+
+<p align="center">
+  <a href="https://github.com/Agentra-Labs/AGCL"><img alt="GitHub" src="https://img.shields.io/badge/github-Agentra--Labs%2FAGCL-181717?logo=github&logoColor=white"></a>
+  <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white"></a>
+  <a href="https://pytorch.org/"><img alt="PyTorch" src="https://img.shields.io/badge/pytorch-2.0%2B-EE4C2C?logo=pytorch&logoColor=white"></a>
+  <a href="https://fastapi.tiangolo.com/"><img alt="FastAPI" src="https://img.shields.io/badge/fastapi-0.111%2B-009688?logo=fastapi&logoColor=white"></a>
+  <a href="https://huggingface.co/"><img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97-transformers-FFD21E"></a>
+  <a href="https://github.com/ggerganov/llama.cpp"><img alt="llama.cpp" src="https://img.shields.io/badge/llama.cpp-gguf-000000"></a>
+  <a href="https://github.com/Agentra-Labs/AGCL/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Agentra-Labs/AGCL?style=flat&logo=github"></a>
+  <a href="https://github.com/Agentra-Labs/AGCL/issues"><img alt="Issues" src="https://img.shields.io/github/issues/Agentra-Labs/AGCL?logo=github"></a>
+  <a href="https://github.com/Agentra-Labs/AGCL/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-see%20repo-blue"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey">
+  <img alt="CLI" src="https://img.shields.io/badge/interface-TUI%20%7C%20HTTP%2BSSE-purple">
+</p>
 
 > **Documentation map**
 >
@@ -50,8 +68,8 @@ without drawing attention to the mismatch.
 ## Install
 
 ```bash
-git clone <repo>
-cd nano-cloud-agent
+git clone https://github.com/Agentra-Labs/AGCL.git
+cd AGCL
 pip install -r requirements.txt
 
 # Optional: one-shot setup of the RecursiveMAS feature
@@ -75,7 +93,7 @@ CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall
 ## Setup
 
 API keys live in a gitignored `.env` file at the project root, loaded by
-`agcl/secrets.py`. Copy the template and fill it in:
+`AGCL/secrets.py`. Copy the template and fill it in:
 
 ```bash
 cp .env.example .env
@@ -286,7 +304,7 @@ Full function-level documentation for each file is in `docs/main.md`.
 
 ## RecursiveMAS
 
-`agcl/recursive/` implements recursive multi-agent reasoning that
+`AGCL/recursive/` implements recursive multi-agent reasoning that
 passes latent embeddings between agents instead of text. Two small
 residual MLPs (`InnerLink`, `OuterLink`) sit between the agents; the loop
 unrolls n rounds and only the final agent decodes text.
@@ -440,7 +458,7 @@ Deeper docs:
 
 ## Node mode (open this PC to a GUI)
 
-To use agcl as a backend for a separate GUI / web app, run it in
+To use AGCL as a backend for a separate GUI / web app, run it in
 **node mode**:
 
 ```bash

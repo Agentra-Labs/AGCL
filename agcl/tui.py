@@ -44,6 +44,9 @@ BASE_COMMANDS = [
     "back", "quit", "help",
     "topics", "rebuild", "halt", "pause", "resume", "status", "latent",
     "cloud", "continue", "server", "config",
+    # mini-model background trainer
+    "mini", "mini-start", "mini-stop", "mini-pause", "mini-resume",
+    "mini-status", "mini-test", "mini-config", "mini-presets",
 ]
 
 
@@ -142,6 +145,8 @@ def _run_chat_mode(session: PromptSession, linter: Linter) -> None:
             return
         if line == "/help":
             _print_help(); continue
+        if _handle_mini_slash(line, session):
+            continue
 
         sess = st.get_session(sid)
         msgs = sess["messages"] + [{"role": "user", "content": line}]
@@ -197,6 +202,8 @@ def _run_recursive_mode(session: PromptSession, linter: Linter) -> None:
             return
         if line == "/help":
             _print_help(); continue
+        if _handle_mini_slash(line, session):
+            continue
         if line == "/topics":
             from agcl.recursive import persistence as P
             for r in P.list_topics(sess.state_dir):
@@ -285,6 +292,111 @@ def _run_topics_mode() -> None:
               f"seed={r.get('seed_question','')[:60]!r}")
 
 
+def _run_minimodel_mode(session: PromptSession) -> None:
+    """Interactive control surface for the background mini-trainer."""
+    from agcl.mini import runtime as M
+    print()
+    print("== minimodel ==  /back leaves; /mini-test prompt to sample")
+    while True:
+        items: List[MenuItem] = [
+            ("status",  "status - running/paused/step/loss"),
+            ("start",   "start - enable + spin up the background thread"),
+            ("stop",    "stop - halt the trainer"),
+            ("pause",   "pause - suspend (resumable)"),
+            ("resume",  "resume - after pause"),
+            ("test",    "test - generate from the mini model"),
+            ("config",  "config - inspect / edit MiniConfig"),
+            ("presets", "presets - list strategies + attention + archs"),
+            ("ckpt",    "checkpoint - force save"),
+            ("back",    "back - return to main menu"),
+        ]
+        try:
+            pick = menu("AGCL - minimodel", items)
+        except (EOFError, KeyboardInterrupt):
+            return
+        if pick is None or pick == "back":
+            return
+        t = M.get_trainer()
+        if pick == "status":
+            for k, v in t.status().items():
+                print(f"  {k:<14} {v}")
+        elif pick == "start":
+            t.config.enabled = True
+            t.start()
+            print("  trainer started (low priority, sleeping between steps)")
+        elif pick == "stop":
+            t.stop()
+            print("  trainer stopped")
+        elif pick == "pause":
+            t.pause(); print("  paused")
+        elif pick == "resume":
+            t.resume(); print("  resumed")
+        elif pick == "test":
+            try:
+                p = session.prompt("  mini-test prompt > ").strip()
+            except (EOFError, KeyboardInterrupt):
+                continue
+            if not p:
+                continue
+            r = t.test(p)
+            print(f"  step={r['step']}  arch={r['arch']}  strategy={r['strategy']}")
+            print(f"  decoded > {r['decoded']!r}")
+        elif pick == "config":
+            for k, v in t.config.to_dict().items():
+                print(f"  {k:<14} {v}")
+        elif pick == "presets":
+            from agcl.mini.strategies import PRESETS
+            from agcl.mini.attention import ATTENTION_MASKS
+            print("  strategies:")
+            for k, comp in PRESETS.items():
+                print(f"    {k:<18} {comp}")
+            print("  attention presets:", list(ATTENTION_MASKS.keys()))
+            print("  archs: transformer | mlp")
+        elif pick == "ckpt":
+            t.force_checkpoint(); print("  checkpoint saved")
+        print()
+
+
+def _handle_mini_slash(line: str, session: Optional[PromptSession] = None) -> bool:
+    """Handle /mini-* slash commands from any sub-mode. Returns True if
+    the line was a mini command (handled or rejected)."""
+    if not line.startswith("/mini"):
+        return False
+    from agcl.mini import runtime as M
+    t = M.get_trainer()
+    head, _, tail = line.partition(" ")
+    head = head.lower()
+    if head in ("/mini", "/mini-status"):
+        for k, v in t.status().items():
+            print(f"  {k:<14} {v}")
+    elif head == "/mini-start":
+        t.config.enabled = True; t.start()
+        print("  mini trainer started")
+    elif head == "/mini-stop":
+        t.stop(); print("  mini trainer stopped")
+    elif head == "/mini-pause":
+        t.pause(); print("  mini trainer paused")
+    elif head == "/mini-resume":
+        t.resume(); print("  mini trainer resumed")
+    elif head == "/mini-test":
+        prompt = tail.strip() or "hello"
+        r = t.test(prompt)
+        print(f"  step={r['step']} arch={r['arch']} strategy={r['strategy']}")
+        print(f"  decoded > {r['decoded']!r}")
+    elif head == "/mini-config":
+        for k, v in t.config.to_dict().items():
+            print(f"  {k:<14} {v}")
+    elif head == "/mini-presets":
+        from agcl.mini.strategies import PRESETS
+        from agcl.mini.attention import ATTENTION_MASKS
+        print(f"  strategies: {list(PRESETS.keys())}")
+        print(f"  attention:  {list(ATTENTION_MASKS.keys())}")
+        print("  archs: transformer | mlp")
+    else:
+        print(f"  unknown mini command: {head}")
+    return True
+
+
 def _run_plugins_mode() -> None:
     from agcl import plugins as P
     rows = P.loaded()
@@ -329,6 +441,7 @@ def run() -> int:
         items: List[MenuItem] = [
             ("chat",      "chat - prefix + cloud passthrough"),
             ("recursive", "recursive - multi-agent reasoning"),
+            ("minimodel", "minimodel - background trainer (toggleable)"),
             ("topics",    "topics - list saved trained-state"),
             ("config",    "config - interactive configurator"),
             ("server",    "server - start node (optional)"),
@@ -347,6 +460,8 @@ def run() -> int:
             _run_chat_mode(session, linter)
         elif choice == "recursive":
             _run_recursive_mode(session, linter)
+        elif choice == "minimodel":
+            _run_minimodel_mode(session)
         elif choice == "topics":
             _run_topics_mode()
         elif choice == "config":

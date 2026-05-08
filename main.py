@@ -497,6 +497,17 @@ def main():
     np.add_argument("--log-level", default="warning",
         help="uvicorn log level (info|warning|error)")
 
+    # `mini` controls the optional background mini-model trainer
+    mp = sub.add_parser("mini", help="background mini-model trainer (toggleable)")
+    mp.add_argument("action", choices=[
+        "status", "start", "stop", "pause", "resume",
+        "test", "config", "presets", "checkpoint",
+    ], default="status", nargs="?")
+    mp.add_argument("prompt", nargs="?", default=None,
+                    help="prompt for `mini test` (required for that action)")
+    mp.add_argument("--max-new", type=int, default=32)
+    mp.add_argument("--temperature", type=float, default=0.8)
+
     # `autoconfig` sets up a fresh checkout for HF RecursiveMAS
     ap_auto = sub.add_parser("autoconfig",
         help="set up project files for HF RecursiveMAS (idempotent)")
@@ -541,11 +552,57 @@ def main():
         ))
     elif args.cmd == "chat":
         _run_cli(args)
+    elif args.cmd == "mini":
+        _run_mini(args)
     else:
         # default: persistent TUI shell. Server is opt-in via "serve"/"node"
         # subcommands or the in-shell menu.
         from agcl.tui import run as run_shell
         sys.exit(run_shell())
+
+
+def _run_mini(args):
+    """One-shot CLI control for the background mini-model trainer."""
+    from agcl.mini import runtime as M
+    t = M.get_trainer()
+    if args.action == "status":
+        for k, v in t.status().items():
+            print(f"  {k:<14} {v}")
+        return
+    if args.action == "start":
+        t.config.enabled = True
+        t.start()
+        print("  mini trainer started")
+        return
+    if args.action == "stop":
+        t.stop(); print("  mini trainer stopped"); return
+    if args.action == "pause":
+        t.pause(); print("  paused"); return
+    if args.action == "resume":
+        t.resume(); print("  resumed"); return
+    if args.action == "checkpoint":
+        t.force_checkpoint(); print("  checkpoint saved"); return
+    if args.action == "config":
+        for k, v in t.config.to_dict().items():
+            print(f"  {k:<14} {v}")
+        return
+    if args.action == "presets":
+        from agcl.mini.strategies import PRESETS
+        from agcl.mini.attention import ATTENTION_MASKS
+        print("  strategies:")
+        for k, comp in PRESETS.items():
+            print(f"    {k:<18} {comp}")
+        print("  attention:", list(ATTENTION_MASKS.keys()))
+        print("  archs: transformer | mlp")
+        return
+    if args.action == "test":
+        if not args.prompt:
+            print("  usage: python main.py mini test \"<prompt>\"")
+            sys.exit(1)
+        r = t.test(args.prompt, max_new=args.max_new, temperature=args.temperature)
+        print(f"  step={r['step']} arch={r['arch']} strategy={r['strategy']}")
+        print(f"  decoded > {r['decoded']!r}")
+        return
 
 
 if __name__ == "__main__":

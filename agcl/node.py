@@ -592,6 +592,91 @@ def make_node_router() -> APIRouter:
         from agcl.plugins import loaded as _loaded
         return {"plugins": _loaded()}
 
+    # ---- mini-model background trainer --------------------------------
+    # Optional, toggleable, pause/resume-able tiny model that trains in
+    # the background off latents + reformulations captured during normal
+    # AGCL use. See docs/minimodel.md and docs/endpoint.md.
+
+    @r.get("/mini/status")
+    def mini_status():
+        from agcl.mini import runtime as M
+        return M.status()
+
+    @r.get("/mini/config")
+    def mini_get_config():
+        from agcl.mini import runtime as M
+        return M.get_trainer().config.to_dict()
+
+    @r.patch("/mini/config")
+    async def mini_patch_config(request: Request):
+        from agcl.mini import runtime as M
+        body = await request.json()
+        t = M.get_trainer()
+        result = t.config.update(body or {})
+        # `lr` change is hot-applicable; rebuild for arch-shaping fields.
+        if "lr" in result["applied"]:
+            for g in t.opt.param_groups:
+                g["lr"] = float(t.config.lr)
+        if result.get("requires_rebuild"):
+            M.rebuild()
+        return {"ok": True, **result}
+
+    @r.post("/mini/start")
+    def mini_start():
+        from agcl.mini import runtime as M
+        t = M.get_trainer()
+        t.config.enabled = True
+        t.start()
+        return {"ok": True, "status": t.status()}
+
+    @r.post("/mini/stop")
+    def mini_stop():
+        from agcl.mini import runtime as M
+        t = M.get_trainer()
+        t.stop()
+        return {"ok": True, "status": t.status()}
+
+    @r.post("/mini/pause")
+    def mini_pause():
+        from agcl.mini import runtime as M
+        t = M.get_trainer()
+        t.pause()
+        return {"ok": True, "status": t.status()}
+
+    @r.post("/mini/resume")
+    def mini_resume():
+        from agcl.mini import runtime as M
+        t = M.get_trainer()
+        t.resume()
+        return {"ok": True, "status": t.status()}
+
+    @r.post("/mini/test")
+    async def mini_test(request: Request):
+        from agcl.mini import runtime as M
+        body = await request.json()
+        prompt = (body.get("prompt") or "").strip()
+        max_new = int(body.get("max_new", 32))
+        temperature = float(body.get("temperature", 0.8))
+        if not prompt:
+            raise HTTPException(400, "prompt required")
+        return M.get_trainer().test(prompt, max_new=max_new, temperature=temperature)
+
+    @r.post("/mini/checkpoint")
+    def mini_checkpoint():
+        from agcl.mini import runtime as M
+        M.get_trainer().force_checkpoint()
+        return {"ok": True}
+
+    @r.get("/mini/presets")
+    def mini_presets():
+        from agcl.mini.strategies import PRESETS
+        from agcl.mini.attention import ATTENTION_MASKS
+        return {
+            "strategies": {k: v for k, v in PRESETS.items()},
+            "attention":  list(ATTENTION_MASKS.keys()),
+            "archs":      ["transformer", "mlp"],
+        }
+
     # ---- main-agent chat passthrough (delegates to existing /chat route) ----
     # The existing /chat/{session_id} endpoint in main.py already does
     # streaming. We re-expose it under /node/chat/{session_id} so the GUI

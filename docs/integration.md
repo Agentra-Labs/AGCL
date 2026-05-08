@@ -15,6 +15,9 @@ latent space.
 > - **[endpoint.md](endpoint.md)** - **pluggable endpoints**: control
 >   recursive MAS (halt / pause / resume), inspect latent space, and
 >   register your own routes via `plugins/`
+> - **[minimodel.md](minimodel.md)** - the optional background mini-
+>   model trainer (toggleable, pausable, with attention presets and
+>   training strategies)
 > - **[training.md](training.md)** - what auto-training does
 > - **[recursive_mas_setup.md](recursive_mas_setup.md)** - terse
 >   technical reference
