@@ -6,6 +6,18 @@ can get this running. Nothing here assumes prior experience.
 
 You will need about 15 minutes and an internet connection.
 
+> **Where you are:** start here.
+> Once you've finished this guide, jump to whichever doc fits your goal:
+> - **[configuration.md](configuration.md)** — what every setting does
+>   (the friendly reference)
+> - **[advanced_guide.md](advanced_guide.md)** — set up the recursive
+>   multi-agent feature with real models
+> - **[training.md](training.md)** — what happens when the recursive
+>   feature trains on a question
+> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+>   technical reference
+> - **[main.md](main.md)** — per-file code reference
+
 ---
 
 ## What openslock does, in one paragraph
@@ -235,33 +247,61 @@ the program. `.env` is read once at startup.
 
 ## Optional — try the recursive multi-agent feature
 
-This is a separate, more experimental part of the project that chains
-several models together to think in steps. The fastest way to set it
-up is one command:
+This is a separate, more capable part of the project that chains
+several models together to think in steps. There are two ways to set
+it up.
 
-    python main.py autoconfig --install-deps
+### Option A — one-shot canonical setup
+
+Fastest. Installs the canonical pair (Qwen 0.5B + TinyLlama 1.1B),
+sequential pattern, 2 rounds:
+
+    python main.py --autoconfig
+
+(Add `--install-deps` if you don't already have the `transformers`
+package; it'll pip-install for you.)
 
 That:
 - creates a `mas.json` config file with two HuggingFace models
 - adds the right settings to your `.env`
 - creates `models/hf/` (where models will cache, kept inside the
   project so it's easy to clean up later)
-- installs `transformers` if you don't have it
 - runs a self-test (should print `21/21 tests passed`)
 
-After that:
+### Option B — interactive wizard
 
-    python main.py recursive info                   # shows current config
-    python main.py recursive run "explain quantum entanglement simply"
+Walks you through every choice (pattern, agent count, models, roles,
+where to download). Uses plain prompts — no special UI to learn.
 
-The first run will download two small models (~3 GB total) into
-`models/hf/`. Subsequent runs use the cached copies.
+    python main.py --config
 
-When you're ready to use real HuggingFace models and configure your
-own multi-agent setup, the next walkthrough is
+Pick this if you want non-default models, or you want to try a
+different collaboration pattern (`moe`, `distill`, `deliberation`),
+or you want every model fully on disk instead of in HF cache.
+
+The wizard is documented step-by-step in **[configuration.md](configuration.md)**.
+
+### Then run it
+
+After either option:
+
+    python main.py recursive info                                  # shows current config
+    python main.py recursive run "explain quantum entanglement"    # one-shot
+    python main.py recursive run                                   # interactive multi-turn
+
+The first run on a topic will take a minute or two — the system asks
+the cloud once for a polished answer, then trains the small projection
+MLPs between agents to reproduce it locally. Subsequent questions on
+similar topics reuse those trained weights from disk and skip training.
+
+If this is interesting, **[training.md](training.md)** explains
+exactly what's happening when you see those `[stage A]`/`[stage B]`
+lines fly by.
+
+When you're ready to set up your own multi-agent system with real
+HuggingFace models, the next walkthrough is
 **[advanced_guide.md](advanced_guide.md)** — same step-by-step style
-as this guide, picks up where this one ends. The dense technical
-reference is in [recursive_mas_setup.md](recursive_mas_setup.md).
+as this guide, picks up where this one ends.
 
 ---
 
@@ -271,11 +311,17 @@ You probably won't need to touch any of these as a beginner, but for
 when you're curious:
 
 - `.env` — your API keys (you fill this in)
-- `models/` — your downloaded `.gguf` model files
-- `.agent_state/` — your saved chat sessions (auto-created)
+- `models/` — your downloaded `.gguf` and HF model files
+- `.agent_state/` — your saved chat sessions and trained MAS topics
+  (auto-created)
+- `mas.json` — your recursive multi-agent recipe (created by
+  `--config` or `--autoconfig`)
 - `openslock/config.py` — defaults for everything tunable
+- `docs/configuration.md` — every config knob explained simply
+- `docs/training.md` — how the recursive feature auto-trains
+- `docs/advanced_guide.md` — picking models for the recursive feature
+- `docs/recursive_mas_setup.md` — terse technical reference
 - `docs/main.md` — what every code file does
-- `docs/recursive_mas_setup.md` — the multi-agent feature
 - `readme.md` — the short technical overview
 
 ---

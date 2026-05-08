@@ -12,6 +12,17 @@ About 30–45 minutes start to finish, plus model download time. Disk
 space depends on which models you pick — anywhere from 300 MB to
 several GB.
 
+> **Where you are:** picking models and running the MAS by hand.
+> Other docs:
+> - **[guide.md](guide.md)** — first-time setup
+> - **[configuration.md](configuration.md)** — every config knob
+>   explained simply (great if you skipped that)
+> - **[training.md](training.md)** — what auto-training does, step
+>   by step
+> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+>   reference
+> - **[main.md](main.md)** — per-file code reference
+
 ---
 
 ## What you're about to build
@@ -51,9 +62,23 @@ puts every file in place:
 That does steps 1, 4, 5, and the model download in one shot. Skip
 ahead to step 6 once it finishes.
 
-If you'd rather understand each piece (or want a different model
-mix), keep reading from step 1 — `autoconfig` is just a wrapper
-around what the rest of this guide does manually.
+## Shortcut — interactive wizard
+
+If the canonical pair isn't quite what you want, but you don't want to
+edit JSON by hand either:
+
+    python main.py --config
+
+That walks you through every choice — pattern, agent count, models,
+roles, dtypes, and (optionally) downloading every HF model fully into
+`models/hf_local/` so future runs never hit the HuggingFace Hub. It
+writes `mas.json` and patches `.env` with the right `MAS_*` keys at
+the end. Full walkthrough is in
+**[configuration.md](configuration.md#path-2-interactive-wizard---config)**.
+
+If you'd rather understand each piece (or want very fine-grained
+control), keep reading from step 1 — `autoconfig` and `--config` are
+both wrappers around what the rest of this guide does manually.
 
 ---
 
@@ -353,12 +378,53 @@ HF agents stay loaded for the lifetime of the process.
 
 ---
 
-## Step 10 (optional) — Train the loop
+## Step 10 — auto-training and multi-turn (the easy path)
 
-This is only for HF agents (GGUF can't backprop). The training is in
-`openslock/recursive/train.py` as small generators you drive yourself.
+You don't have to write any training code. The "interactive run"
+command does it for you on the fly:
 
-There are two stages:
+    python main.py recursive run
+
+What happens on the first turn of a new topic:
+
+1. The cloud is asked once for `(answer, [reformulations])`.
+2. The MAS's small projection MLPs are trained for ~50 steps to
+   reproduce that answer (Stage A: latent alignment, Stage B: token
+   decoding).
+3. The trained weights + topic centroid are saved to disk under
+   `.agent_state/mas_topics/<id>/`.
+
+What happens on follow-ups: the local MAS runs entirely offline.
+
+What happens on a topic switch: an embedding gate detects the
+similarity drop, asks cloud to confirm, and either (a) reuses an
+already-trained similar topic from disk or (b) trains fresh.
+
+This is documented in detail in **[training.md](training.md)** — read
+that if you want to understand the loss curves you see scrolling.
+
+In-session escape hatches:
+
+    /cloud <message>      skip local entirely; use cloud for this turn
+    /continue <message>   local makes a short prefix; cloud finishes (one-shot)
+    /topics               list saved topics
+    /quit                 exit
+
+Useful flags:
+
+    --continue-with-cloud      use cloud as continuator for the whole session
+    --no-persist               don't save trained weights to disk
+    --stage1-steps 60          more latent-alignment steps (slower, sharper)
+    --stage2-steps 40          more token-CE steps
+    --retrieval-threshold 0.6  reuse saved topics more aggressively
+
+## Step 11 (optional) — Manual training (for your own datasets)
+
+The auto-training above is meant for one-off interactive use. For real
+training on your own data, the lower-level API in
+`openslock/recursive/train.py` gives you full control.
+
+This is only for HF agents (GGUF can't backprop). Two stages:
 
 **Stage 1 — warmup.** Each agent's `InnerLink` is trained alone with
 its underlying LM frozen. The loss is "how close is the produced
@@ -387,8 +453,8 @@ Runnable, fully-tested examples on tiny synthetic data live in
 `openslock/recursive/validate.py` (look at
 `t_stage1_warmup_reduces_loss` and `t_stage2_full_loop_reduces_loss`).
 
-You don't have to train. The MAS works fine zero-shot — training just
-sharpens it for a specific task.
+You don't have to train manually. The MAS works fine with auto-training
+alone — manual training is only for when you have a specific dataset.
 
 ---
 
@@ -427,26 +493,37 @@ use `mas.generate_text(..., do_sample=False)`).
 
 ## Useful commands cheat-sheet
 
-    python main.py autoconfig                          # one-shot project setup
+    python main.py --autoconfig                        # one-shot canonical setup
+    python main.py --config                            # interactive wizard
+
     python main.py autoconfig --install-deps           # also pip install transformers
     python main.py autoconfig --download               # also pre-pull HF models
     python main.py autoconfig --force                  # overwrite mas.json
 
     python main.py recursive validate                  # run all 21 checks
-    python main.py recursive info                      # show resolved config
-    python main.py recursive run "your prompt"         # generate text
-    python main.py recursive run "..." --max-new-tokens 64
+    python main.py recursive info                      # show resolved config + saved topics
+    python main.py recursive run "your prompt"         # one-shot
+    python main.py recursive run                       # multi-turn interactive
+    python main.py recursive run "..." --cloud         # force cloud for this turn
+    python main.py recursive run --continue-with-cloud # local prefix + cloud finish
 
     huggingface-cli login                              # one-time, for gated models
     huggingface-cli scan-cache                         # see what's downloaded
     huggingface-cli delete-cache                       # free disk space
 
+    rm -rf .agent_state/mas_topics/                    # clear trained topics
+
 ---
 
 ## Where to go next
 
-- Module reference: [main.md](main.md)
-- Tighter technical spec: [recursive_mas_setup.md](recursive_mas_setup.md)
+- **[configuration.md](configuration.md)** — every config knob,
+  scenarios, on-disk layout
+- **[training.md](training.md)** — what happens when you see those
+  `[stage A]` / `[stage B]` lines
+- **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+  technical reference
+- **[main.md](main.md)** — per-file code reference
 - The actual code (it's small and readable): `openslock/recursive/`
 - The 21 validation tests double as runnable examples:
   `openslock/recursive/validate.py`

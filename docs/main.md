@@ -1,7 +1,19 @@
-# Agent Codebase Docs
+# Codebase reference
 
 Read this top to bottom once to understand the system, then use the per-file
 sections as a reference when you need to find or change something specific.
+
+> **Where you are:** the per-file code reference.
+> Friendlier docs:
+> - **[guide.md](guide.md)** — first-time setup
+> - **[configuration.md](configuration.md)** — every config knob in
+>   plain English
+> - **[training.md](training.md)** — what auto-training does, step
+>   by step
+> - **[advanced_guide.md](advanced_guide.md)** — picking models and
+>   patterns
+> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+>   technical reference for the multi-agent feature
 
 ---
 
@@ -16,22 +28,39 @@ summary. The system tracks what hours of day you use it, and after a few days
 of data it knows your patterns and can trigger callbacks (like pre-warming the
 model) before you even open the CLI.
 
+The optional **recursive multi-agent feature** runs in parallel: a chain of
+small LMs that pass embedding "thoughts" between them via tiny projection MLPs.
+The MLPs auto-train on a single cloud answer per topic and the trained state is
+indexed by similarity, so returning to a related subject reuses prior training
+instead of redoing it.
+
 ---
 
 ## File map
 
-    config.py       all settings, read by every other file
-    secrets.py      .env loader (API keys, MAS_* env vars)
-    autoconfig.py   one-shot project setup for the RecursiveMAS feature
-    state.py        in-memory sessions, disk flush, idle detection
-    pressure.py     API request rate + latency tracker
-    local_llm.py    llama.cpp wrapper, prefix generation, idle unload
-    cloud.py        OpenAI + Claude streaming with continuation logic
-    context.py      token counting, overflow detection, recontextualization
-    patterns.py     usage pattern learning, reactive hour-based triggers
-    recursive/      recursive multi-agent system (latent-space reasoning)
-    main.py         FastAPI app, routes, idle watcher, SSE streaming
-    cli.py          terminal client for testing
+    config.py            all settings, read by every other file
+    secrets.py           .env loader (API keys, MAS_* env vars)
+    autoconfig.py        one-shot canonical setup for the RecursiveMAS feature
+    configurator.py      interactive wizard for custom MAS setups
+    state.py             in-memory sessions, disk flush, idle detection
+    pressure.py          API request rate + latency tracker
+    local_llm.py         llama.cpp wrapper, prefix generation, idle unload
+    cloud.py             OpenAI + Claude streaming with continuation logic
+    context.py           token counting, overflow detection, recontextualization
+    patterns.py          usage pattern learning, reactive hour-based triggers
+    recursive/           recursive multi-agent system (latent-space reasoning)
+        links.py         InnerLink / OuterLink projection MLPs
+        backends.py      HFBackend (transformers) + GGUFBackend (llama.cpp)
+        agent.py         RecursiveAgent — wraps a backend
+        mas.py           RecursiveMAS — the loop controller
+        builder.py       build_agent / build_mas_from_specs / build_from_config
+        patterns.py      sequential / moe / distill / deliberation builders
+        train.py         offline stage1_warmup_inner / stage2_full_loop
+        auto_train.py    cloud-bootstrapped online trainer + topic tracker
+        session.py       RecursiveSession — multi-turn driver with retrieval
+        persistence.py   per-topic on-disk records + similarity index
+        validate.py      21 runnable unit checks
+    main.py              FastAPI app, routes, idle watcher, SSE streaming, CLI
     requirements.txt
 
 ---
@@ -525,25 +554,53 @@ output is small.
 
 Files:
 
-    links.py     InnerLink, OuterLink (paper equations)
-    agent.py     RecursiveAgent — wraps a causal LM, exposes the last
-                 hidden state and accepts an injected latent as a virtual
-                 prepended token via inputs_embeds
-    mas.py       RecursiveMAS — loop controller for n recursion rounds.
-                 Cold-starts at agent 0, then OuterLink per cross-agent
-                 hop and InnerLink per same-agent step, with a wrap-around
-                 OuterLink for round transitions. Only the final agent
-                 decodes text.
-    patterns.py  sequential / mixture_of_experts / distillation /
-                 deliberation builders — same loop, different roles.
-    train.py     stage1_warmup_inner (frozen agent, cosine-sim loss vs
-                 target embedding) and stage2_full_loop (fully unrolled
-                 cross-entropy on the final logits)
-    validate.py  12 runnable tests that verify behavior end to end:
-                 identity-at-init, param counts, shape mapping, loss
-                 actually decreases for each link, the MAS loop runs and
-                 produces the right shape, latent evolves across rounds,
-                 stage-1/stage-2 helpers train, all four patterns build.
+    links.py        InnerLink, OuterLink (paper equations)
+    agent.py        RecursiveAgent — wraps a causal LM, exposes the last
+                    hidden state and accepts an injected latent as a virtual
+                    prepended token via inputs_embeds
+    backends.py     HFBackend (transformers + torch) and GGUFBackend
+                    (llama-cpp-python). Shared interface: hidden_size,
+                    supports_injection, encode, forward_latent[_text],
+                    decode_text, load.
+    mas.py          RecursiveMAS — loop controller for n recursion rounds.
+                    Cold-starts at agent 0, then OuterLink per cross-agent
+                    hop and InnerLink per same-agent step, with a wrap-around
+                    OuterLink for round transitions. Only the final agent
+                    decodes text.
+    patterns.py     sequential / mixture_of_experts / distillation /
+                    deliberation builders — same loop, different roles.
+    builder.py      build_agent / build_mas_from_specs / build_from_config —
+                    instantiate from dicts or env-driven config.
+    train.py        Offline two-stage trainer: stage1_warmup_inner (frozen
+                    agent, cosine-sim loss vs target embedding) and
+                    stage2_full_loop (fully unrolled cross-entropy on the
+                    final logits).
+    auto_train.py   Online cloud-bootstrapped trainer:
+                    bootstrap_pairs (cloud → answer + N reformulations),
+                    auto_train (Stage A latent alignment + Stage B answer-
+                    token CE; agents auto-frozen),
+                    cloud_confirm_switch (yes/no topic-switch oracle),
+                    TopicTracker (EMA centroid over planner embeddings).
+                    See docs/training.md for the conceptual walkthrough.
+    session.py      RecursiveSession — multi-turn driver. Per turn:
+                    (1) topic gate (planner embed + optional cloud confirm),
+                    (2) topic resolution (retrieve saved topic by similarity
+                        OR bootstrap+train+save fresh),
+                    (3) local generation with cloud auto-fallback on
+                        degenerate output (or cloud-continuator mode),
+                    (4) /cloud override.
+    persistence.py  Per-topic on-disk records under
+                    STATE_DIR/mas_topics/<topic_id>/ with meta.json,
+                    centroid.pt, links.pt. Numpy-cosine similarity index;
+                    signature-filtered (refuses to load weights into a MAS
+                    with mismatched per-agent dims).
+    validate.py     21 runnable tests that verify behavior end to end:
+                    identity-at-init, param counts, shape mapping, loss
+                    actually decreases for each link, the MAS loop runs and
+                    produces the right shape, latent evolves across rounds,
+                    stage-1/stage-2 helpers train, all four patterns build,
+                    text-mode loop respects supports_injection, builder
+                    validates specs, config loads cleanly.
 
 Backends:
 

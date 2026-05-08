@@ -17,7 +17,10 @@ Public API:
     RecursiveMAS                           — the loop controller
     sequential, mixture_of_experts,
     distillation, deliberation             — collaboration pattern builders
-    stage1_warmup_inner, stage2_full_loop  — training entry points
+    stage1_warmup_inner, stage2_full_loop  — offline training entry points
+    auto_train, bootstrap_pairs,
+    cloud_confirm_switch, TopicTracker     — cloud-teacher online training
+    RecursiveSession                       — multi-turn driver
 """
 
 from .links import InnerLink, OuterLink
@@ -27,6 +30,11 @@ from .mas import RecursiveMAS
 from .patterns import sequential, mixture_of_experts, distillation, deliberation
 from .train import stage1_warmup_inner, stage2_full_loop
 from .builder import build_agent, build_mas_from_specs, build_from_config
+from .auto_train import (
+    auto_train, bootstrap_pairs, cloud_confirm_switch, TopicTracker,
+)
+from .session import RecursiveSession
+from . import persistence
 
 __all__ = [
     "InnerLink", "OuterLink",
@@ -35,4 +43,7 @@ __all__ = [
     "sequential", "mixture_of_experts", "distillation", "deliberation",
     "stage1_warmup_inner", "stage2_full_loop",
     "build_agent", "build_mas_from_specs", "build_from_config",
+    "auto_train", "bootstrap_pairs", "cloud_confirm_switch", "TopicTracker",
+    "RecursiveSession",
+    "persistence",
 ]

@@ -1,12 +1,15 @@
-# nano-cloud-agent
+# openslock
 
-> **First time here? → [docs/guide.md](docs/guide.md)** is a 15-minute
-> step-by-step walkthrough for total beginners (no Python experience
-> assumed).
+> **Documentation map**
 >
-> **Already comfortable and want the multi-agent feature? →
-> [docs/advanced_guide.md](docs/advanced_guide.md)** walks through
-> setting up RecursiveMAS with real HuggingFace models step by step.
+> | If you want to... | Read this |
+> |---|---|
+> | Set up the project for the first time (no Python experience needed) | **[docs/guide.md](docs/guide.md)** — 15-min beginner walkthrough |
+> | Understand every config knob in plain English | **[docs/configuration.md](docs/configuration.md)** — friendly reference |
+> | Set up the recursive multi-agent feature with real models | **[docs/advanced_guide.md](docs/advanced_guide.md)** — picking models step by step |
+> | Understand what auto-training is doing under the hood | **[docs/training.md](docs/training.md)** — the `[stage A]` / `[stage B]` lines explained |
+> | Get a terse technical reference for the multi-agent feature | **[docs/recursive_mas_setup.md](docs/recursive_mas_setup.md)** |
+> | See what every code file does | **[docs/main.md](docs/main.md)** |
 >
 > The rest of this readme is a faster technical overview.
 
@@ -300,13 +303,131 @@ programmatically with `RecursiveAgent.from_pretrained` /
 ```
 python main.py recursive validate    # 21 runnable checks
 python main.py recursive info        # show resolved config
-python main.py recursive run "..."   # build from config and run
+python main.py recursive run "..."   # one-shot
+python main.py recursive run         # interactive multi-turn
 ```
 
 Patterns: `sequential` (planner → critic → solver), `moe`,
 `distill` (teacher → student), `deliberation`, `custom`.
 
-Full setup walkthrough — mixing HF and GGUF agents, all 4 patterns,
-training, troubleshooting — is in
-[`docs/recursive_mas_setup.md`](docs/recursive_mas_setup.md). Module
-breakdown is in [`docs/main.md`](docs/main.md).
+### Configuration
+
+Two ways to set up the MAS:
+
+```
+python main.py --autoconfig    # one-shot canonical 2-agent HF setup (Qwen + TinyLlama)
+python main.py --config        # interactive wizard: pick pattern, agents, roles, models
+```
+
+The `--config` wizard is the manual-assisted path. It walks through:
+
+1. collaboration pattern (sequential, moe, distill, deliberation, custom)
+2. number of agents and rounds
+3. per-agent backend (`hf` or `gguf`), model id/path, role, device, dtype
+4. **optionally** download every HF model fully into `models/hf_local/<slug>/`
+   so subsequent runs do not hit the HF Hub at all (no rate-limit warnings,
+   no re-download on cache eviction)
+5. write `mas.json` (with backup) and patch `.env` with `MAS_*` keys
+
+Once the local snapshots exist, the agent specs point at the on-disk path
+and `transformers` loads from there like any other directory.
+
+### Cloud-teacher auto-training
+
+Out of the box the inner/outer links are at random init, so an untrained
+MAS injects a noise vector into the final agent and you get garbage —
+typically a single `?` token. To fix this, `recursive run` boots a
+`RecursiveSession` that uses the cloud model as a one-shot teacher:
+
+1. **Bootstrap on a new topic.** First turn (and every confirmed topic
+   switch) sends one cloud call asking for `(answer, [reformulations])`.
+   That gives a polished answer plus 6 paraphrases of the same question.
+2. **Two-stage online training.** The session then trains the inner +
+   outer links (agents stay frozen):
+   - *Stage A* — minimize `1 - cos(loop_final_latent, final_agent.encode(answer))`.
+   - *Stage B* — teacher-force CE on the answer tokens through the final
+     HF agent, with the loop's latent injected at the prompt/answer
+     boundary. Skipped if the final agent is GGUF.
+3. **Local follow-ups.** Subsequent turns run locally via
+   `mas.generate_text`. If the output looks degenerate (too short,
+   pure punctuation, single-token repetition), the session auto-falls
+   back to the cloud for that turn.
+4. **Topic switch detection.** Each user turn is embedded by the planner
+   agent and compared (cosine) to an EMA centroid. A drop below
+   `--switch-threshold` (default 0.6) triggers a yes/no cloud call to
+   confirm; if confirmed, retraining runs against the new topic.
+5. **Cloud override.** Prefix any turn with `/cloud ` (interactive) or
+   pass `--cloud` (one-shot) to bypass the local MAS for that turn.
+
+Tunables on `recursive run`:
+
+```
+--stage1-steps         latent-alignment step count (default 30)
+--stage2-steps         token-CE step count (default 20; 0 disables)
+--switch-threshold     cosine threshold for topic-switch candidate (default 0.6)
+--retrieval-threshold  cosine threshold for reusing a saved topic (default 0.75)
+--n-reformulations     paraphrases asked from cloud (default 6)
+--cloud                one-shot: force cloud for this turn
+--cloud-provider       override DEFAULT_CLOUD (openai|claude)
+--continue-with-cloud  local MAS produces a short prefix; cloud finishes the turn
+--prefix-tokens        prefix length in continuator mode (default 12)
+--no-persist           do not save trained links / centroids to disk
+```
+
+Stage B requires the final agent to be HF-backed. With Qwen2.5-0.5B +
+TinyLlama-1.1B on CPU, 30+20 steps takes roughly 1–3 minutes per topic.
+
+### Training persistence and topic retrieval
+
+After a topic finishes training, the session writes a small directory:
+
+```
+.agent_state/mas_topics/<topic_id>/
+    meta.json       seed_question, dim signature, role/round info, timestamps
+    centroid.pt     planner agent's encoding of the seed question (1-D float32)
+    links.pt        state_dict of mas.inner + mas.outer (link weights only)
+```
+
+When a new turn doesn't match the running EMA centroid, the session
+queries this index by the planner-embedding of the user turn (cosine sim
+against every saved topic's centroid; signatures with mismatched per-
+agent dims are filtered out — `OuterLink` shapes are baked in). If the
+top match scores above `--retrieval-threshold`, the saved link weights
+are loaded and the cloud bootstrap + training are skipped entirely.
+
+The point is to keep the recursive loop's *attention* lightweight: the
+agents stay frozen, only the small projection MLPs move, and all that
+moving state is one `torch.save` per topic. Returning to a previously
+seen subject costs one cosine sim + one `torch.load` instead of a
+~1-3 min training pass.
+
+Topic-management directives in interactive mode:
+
+```
+/topics              list every saved topic (id, dims, seed)
+/cloud <msg>         skip local entirely, answer with cloud
+/continue <msg>      one-turn cloud-continuator (local prefix + cloud finish)
+/quit                exit
+```
+
+### Cloud as continuator inside the MAS
+
+By default the MAS finishes the answer locally and only falls back to
+cloud on degenerate output. `--continue-with-cloud` flips that: the
+MAS produces a short prefix (`--prefix-tokens` tokens), the cloud picks
+up that open assistant turn and streams the rest. This mirrors the
+main agent's local→cloud handoff, just at the MAS level. Per-turn
+override is `/continue <msg>`.
+
+Deeper docs:
+
+- [`docs/configuration.md`](docs/configuration.md) — every config
+  knob explained in plain English
+- [`docs/training.md`](docs/training.md) — exactly what auto-training
+  does on each turn (the `[stage A]` / `[stage B]` lines you see in
+  the terminal)
+- [`docs/advanced_guide.md`](docs/advanced_guide.md) — picking models,
+  mixing HF + GGUF, manual training, all 4 patterns
+- [`docs/recursive_mas_setup.md`](docs/recursive_mas_setup.md) — terse
+  technical reference
+- [`docs/main.md`](docs/main.md) — per-file code reference

@@ -245,39 +245,145 @@ def _run_recursive(args):
 
     if args.action == "info":
         from openslock import config as cfg
-        print("recursive MAS modules:")
+        from openslock.recursive import persistence as rp
+        print("openslock — RecursiveMAS modules:")
         print("  InnerLink, OuterLink              — projection links")
         print("  HFBackend, GGUFBackend            — model backends")
         print("  RecursiveAgent, RecursiveMAS      — agent wrapper + loop controller")
+        print("  RecursiveSession                  — multi-turn driver")
+        print("  auto_train, TopicTracker          — cloud-teacher online training")
+        print("  persistence.{save,load,find}_topic— per-topic state + similarity index")
         print("  build_from_config / build_mas_from_specs / build_agent")
-        print("  stage1_warmup_inner, stage2_full_loop")
         print()
         print("config:")
         print(f"  MAS_PATTERN = {cfg.MAS_PATTERN}")
         print(f"  MAS_ROUNDS  = {cfg.MAS_ROUNDS}")
         print(f"  MAS_DEVICE  = {cfg.MAS_DEVICE}")
         print(f"  MAS_DTYPE   = {cfg.MAS_DTYPE}")
+        print(f"  STATE_DIR   = {cfg.STATE_DIR}")
         print(f"  MAS_AGENTS  ({len(cfg.MAS_AGENTS)}):")
         for i, s in enumerate(cfg.MAS_AGENTS):
             print(f"    [{i}] backend={s.get('backend')}  role={s.get('role','')}  model={s.get('model','')}")
+        topics = rp.list_topics(cfg.STATE_DIR)
+        print(f"\nsaved topics ({len(topics)}):")
+        for t in topics[:10]:
+            print(f"  {t['topic_id']}  dims={t.get('signature',{}).get('dims')}  "
+                  f"seed={t.get('seed_question','')[:60]!r}")
+        if len(topics) > 10:
+            print(f"  ... +{len(topics) - 10} more")
         print()
-        print("run  python main.py recursive validate  to verify the implementation.")
-        print("run  python main.py recursive run \"your prompt\"  to use the configured MAS.")
+        print("commands:")
+        print("  python main.py --config              interactive configurator (assisted)")
+        print("  python main.py --autoconfig          one-shot canonical setup")
+        print("  python main.py recursive validate    21 unit checks")
+        print("  python main.py recursive run         interactive multi-turn")
+        print("  python main.py recursive run \"...\"   one-shot")
         return
 
     if args.action == "run":
-        from openslock.recursive import build_from_config
-        prompt = args.prompt or input("prompt: ")
-        if not prompt.strip():
-            print("empty prompt"); sys.exit(1)
-        print("[mas] building from config...")
+        from openslock.recursive import build_from_config, RecursiveSession
+
+        print("[openslock] building MAS from config...")
         mas = build_from_config()
-        print(f"[mas] {len(mas.agents)} agents, {mas.n_rounds} rounds, dims={mas.dims}")
-        print("[mas] running loop...")
-        out = mas.generate_text(prompt, max_new_tokens=args.max_new_tokens)
-        print()
-        print(out if isinstance(out, str) else out)
+        print(f"[openslock] {len(mas.agents)} agents, {mas.n_rounds} rounds, dims={mas.dims}")
+
+        sess = RecursiveSession(
+            mas,
+            provider=args.cloud_provider,
+            stage1_steps=args.stage1_steps,
+            stage2_steps=args.stage2_steps,
+            switch_threshold=args.switch_threshold,
+            retrieval_threshold=args.retrieval_threshold,
+            n_reformulations=args.n_reformulations,
+            max_new_tokens=args.max_new_tokens,
+            cloud_continue=args.continue_with_cloud,
+            prefix_tokens=args.prefix_tokens,
+            persist=not args.no_persist,
+        )
+
+        # one-shot mode: prompt was passed on the command line
+        if args.prompt:
+            out = asyncio.run(sess.turn(
+                args.prompt,
+                force_cloud=args.cloud,
+                force_continue=args.continue_with_cloud,
+            ))
+            print()
+            print(out)
+            return
+
+        # interactive mode
+        cont_state = "ON" if args.continue_with_cloud else "off"
+        persist_state = "off" if args.no_persist else "ON"
+        print(
+            "\n[openslock] interactive mode\n"
+            "  first turn (or new topic) bootstraps training from cloud, then\n"
+            "  follow-ups run locally with cloud auto-fallback on degenerate output.\n"
+            "  topics are indexed and reused when similar questions return.\n"
+            f"  cloud continuator: {cont_state}    persistence: {persist_state}\n"
+            "  directives:  /cloud <msg>     force cloud only\n"
+            "               /continue <msg>  local prefix + cloud continuator (one turn)\n"
+            "               /topics          list saved topics\n"
+            "               /quit            exit\n"
+        )
+        while True:
+            try:
+                msg = input("you: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nbye"); break
+            if not msg:
+                continue
+            if msg == "/quit":
+                print("bye"); break
+            if msg == "/topics":
+                _print_topics(sess.state_dir)
+                continue
+            force_cloud = False
+            force_continue = False
+            if msg.startswith("/cloud "):
+                force_cloud = True
+                msg = msg[len("/cloud "):].strip()
+                if not msg: continue
+            elif msg == "/cloud":
+                msg = _next_line("cloud you: ")
+                if not msg: continue
+                force_cloud = True
+            elif msg.startswith("/continue "):
+                force_continue = True
+                msg = msg[len("/continue "):].strip()
+                if not msg: continue
+            elif msg == "/continue":
+                msg = _next_line("continue you: ")
+                if not msg: continue
+                force_continue = True
+            try:
+                out = asyncio.run(sess.turn(
+                    msg, force_cloud=force_cloud, force_continue=force_continue,
+                ))
+            except Exception as e:
+                print(f"[openslock] error: {type(e).__name__}: {e}")
+                continue
+            print(f"agent: {out}\n")
         return
+
+
+def _next_line(prompt: str) -> str:
+    try:
+        return input(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return ""
+
+
+def _print_topics(state_dir: str) -> None:
+    from openslock.recursive import persistence as P
+    rows = P.list_topics(state_dir)
+    if not rows:
+        print("  (no saved topics)")
+        return
+    for r in rows:
+        print(f"  {r['topic_id']}  dims={r.get('signature',{}).get('dims')}  "
+              f"seed={r.get('seed_question','')[:60]!r}")
 
 
 def main():
@@ -302,8 +408,33 @@ def main():
     rp = sub.add_parser("recursive", help="recursive multi-agent system feature")
     rp.add_argument("action", choices=["validate", "info", "run"], nargs="?", default="validate")
     rp.add_argument("prompt", nargs="?", default=None,
-                    help="prompt for `recursive run`")
+                    help="prompt for `recursive run` (omit for interactive mode)")
     rp.add_argument("--max-new-tokens", type=int, default=128)
+    rp.add_argument("--cloud", action="store_true",
+                    help="force this turn through the cloud model "
+                         "(skips local MAS); only used in one-shot mode")
+    rp.add_argument("--cloud-provider", default=None,
+                    choices=["openai", "claude"],
+                    help="override DEFAULT_CLOUD for this session")
+    rp.add_argument("--stage1-steps", type=int, default=30,
+                    help="cloud-teacher stage A (latent alignment) step count")
+    rp.add_argument("--stage2-steps", type=int, default=20,
+                    help="cloud-teacher stage B (token CE) step count "
+                         "(0 to disable; auto-skipped if final agent is GGUF)")
+    rp.add_argument("--switch-threshold", type=float, default=0.6,
+                    help="cosine sim below this triggers a topic-switch check")
+    rp.add_argument("--retrieval-threshold", type=float, default=0.75,
+                    help="cosine sim above this reuses a saved topic's "
+                         "trained links instead of retraining")
+    rp.add_argument("--n-reformulations", type=int, default=6,
+                    help="how many question rephrasings to ask cloud for")
+    rp.add_argument("--continue-with-cloud", action="store_true",
+                    help="local MAS produces a short prefix; cloud finishes the "
+                         "turn (mirrors the main agent's local->cloud handoff)")
+    rp.add_argument("--prefix-tokens", type=int, default=12,
+                    help="how many tokens the local MAS produces in continuator mode")
+    rp.add_argument("--no-persist", action="store_true",
+                    help="do not save trained links / centroids to disk")
 
     # `autoconfig` sets up a fresh checkout for HF RecursiveMAS
     ap_auto = sub.add_parser("autoconfig",
@@ -323,8 +454,14 @@ def main():
     # top-level shortcut so `python main.py --autoconfig` works without a subcommand
     ap.add_argument("--autoconfig", action="store_true",
         help="run autoconfig and exit (equivalent to: autoconfig)")
+    ap.add_argument("--config", action="store_true",
+        help="open the interactive RecursiveMAS configurator")
 
     args = ap.parse_args()
+
+    if args.config:
+        from openslock.configurator import run as run_configurator
+        sys.exit(run_configurator())
 
     if args.autoconfig:
         from openslock.autoconfig import run as run_autoconfig

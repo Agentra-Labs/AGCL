@@ -9,6 +9,17 @@ If you only want to confirm the implementation works, skip to the bottom:
 
     python main.py recursive validate    # 21 runnable checks
 
+> **Where you are:** the dense technical reference.
+> Friendlier docs:
+> - **[guide.md](guide.md)** — first-time setup
+> - **[configuration.md](configuration.md)** — config explained for
+>   beginners
+> - **[advanced_guide.md](advanced_guide.md)** — picking models,
+>   patterns, training
+> - **[training.md](training.md)** — what auto-training does, step
+>   by step
+> - **[main.md](main.md)** — per-file code reference
+
 
 ## 1. What it does
 
@@ -162,6 +173,10 @@ Or from explicit specs:
 
 ## 9. Training (HF only)
 
+Two APIs:
+
+### A. Manual training (offline, your own data)
+
     from openslock.recursive import stage1_warmup_inner, stage2_full_loop
 
 Stage 1 — warm up each agent's InnerLink against a target embedding using
@@ -175,6 +190,29 @@ Both helpers are step-by-step generators — the caller decides how to log
 or stop. See [validate.py](../openslock/recursive/validate.py)
 `t_stage1_warmup_reduces_loss` and `t_stage2_full_loop_reduces_loss` for
 runnable examples on tiny synthetic data.
+
+### B. Auto-training via cloud teacher (online, interactive)
+
+    from openslock.recursive import auto_train, bootstrap_pairs
+
+`auto_train(mas, question, answer, reformulations, ...)` runs a two-stage
+inline trainer:
+
+- **Stage A** — cosine-aligns the loop's final latent with the final
+  agent's encoding of `answer`. Trains InnerLink + OuterLink only;
+  agents are auto-frozen via `requires_grad=False`.
+- **Stage B** — teacher-forces CE on `answer` tokens through the final
+  HF agent with the loop-produced latent injected at the prompt/answer
+  boundary. Auto-skipped if the final agent is GGUF.
+
+`bootstrap_pairs(question)` calls cloud once and returns
+`(answer, [reformulations])` parsed from JSON.
+
+`RecursiveSession` (in `openslock/recursive/session.py`) wires these
+together with topic detection and persistence — see section 12.
+
+For a step-by-step explanation of what these stages are doing, see
+**[training.md](training.md)**.
 
 
 ## 10. Validate
@@ -221,3 +259,89 @@ the gguf backend (quantized + cheap).
 
 **"unknown pattern"** — must be one of
 `sequential | moe | distill | deliberation | custom`.
+
+
+## 12. Multi-turn session, persistence, retrieval
+
+`RecursiveSession` is the multi-turn driver around `RecursiveMAS`. It
+adds three things on top of the bare loop:
+
+### Topic gate
+
+Each user turn is embedded by the planner agent and compared (cosine)
+to a running EMA centroid. A drop below `switch_threshold` (default
+0.6) triggers a yes/no cloud confirmation; if confirmed, the session
+treats the turn as a topic switch.
+
+### Persistence + retrieval
+
+After successful auto-training, the session writes:
+
+    STATE_DIR/mas_topics/<topic_id>/
+        meta.json       seed question, dim signature, timestamps
+        centroid.pt     planner-embedding of the seed
+        links.pt        state_dict of mas.inner + mas.outer
+
+`<topic_id>` = first 12 chars of `sha1(seed_question)`.
+
+On the next topic switch, before retraining, the session embeds the
+new seed and finds the highest-cosine saved topic whose dim signature
+matches the running MAS. If the match is above
+`retrieval_threshold` (default 0.75), the saved `links.pt` is loaded
+and training is skipped. This keeps recurring subjects fast — one
+cosine sim + one `torch.load` instead of a 1-3 min training pass.
+
+### Cloud continuator mode
+
+`cloud_continue=True` makes the local MAS produce only `prefix_tokens`
+tokens (default 12), then `cloud.stream_continuation` finishes from
+that open assistant turn. Mirrors the main agent's local→cloud
+handoff. Per-turn override: pass `force_continue=True` to `.turn()`.
+
+### Programmatic use
+
+    import asyncio
+    from openslock.recursive import build_from_config, RecursiveSession
+
+    mas = build_from_config()
+    sess = RecursiveSession(
+        mas,
+        switch_threshold=0.6,
+        retrieval_threshold=0.75,
+        stage1_steps=30, stage2_steps=20,
+        cloud_continue=False,
+        persist=True,
+    )
+
+    out = asyncio.run(sess.turn("explain quantum entanglement"))
+    print(out)
+
+    out2 = asyncio.run(sess.turn("how does it relate to qubits?"))
+    print(out2)
+
+The relevant helpers are exported at the package root:
+
+    from openslock.recursive import (
+        RecursiveSession, auto_train, bootstrap_pairs,
+        cloud_confirm_switch, TopicTracker, persistence,
+    )
+    persistence.list_topics(state_dir)
+    persistence.find_similar_topic(state_dir, query_centroid, threshold=0.75)
+    persistence.save_topic(state_dir, mas, seed, centroid)
+    persistence.load_topic(state_dir, mas, topic_id)
+    persistence.delete_topic(state_dir, topic_id)
+
+
+## 13. Configurator
+
+For interactive setup, `python main.py --config` launches a
+prompt-based wizard that walks through pattern, agent count, per-agent
+backend, model id/path, role, dtype/device. Optionally, every HF
+model can be fully downloaded into `models/hf_local/<slug>/` so
+subsequent runs do not hit the HF Hub at all. The wizard writes
+`mas.json` and patches `.env`.
+
+Source: `openslock/configurator.py`.
+
+For a guided walkthrough see
+[configuration.md](configuration.md#path-2-interactive-wizard---config).
