@@ -1,19 +1,41 @@
-# GUI integration — wiring openslock node into a UI layer
+# GUI integration - wiring AGCL node into a UI layer
 
 This doc is for whoever's writing the **GUI / web frontend** that talks
-to a user's local openslock install. Everything you need to plug in is
-here: the auth flow, every endpoint, every editable config, the SSE
-event format, and the CORS posture.
+to a user's local AGCL (Agentic CLI) install. Everything you need to
+plug in is here: the auth flow, every endpoint, every editable config,
+the SSE event format, the CORS posture, and pointers to the pluggable
+control surface for halting / pausing training and inspecting the
+latent space.
 
 > **Where you are:** the integration contract.
 > Friendlier docs:
-> - **[guide.md](guide.md)** — beginner setup
-> - **[configuration.md](configuration.md)** — every config knob in plain
+> - **[guide.md](guide.md)** - beginner setup
+> - **[configuration.md](configuration.md)** - every config knob in plain
 >   English
-> - **[training.md](training.md)** — what auto-training does
-> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+> - **[endpoint.md](endpoint.md)** - **pluggable endpoints**: control
+>   recursive MAS (halt / pause / resume), inspect latent space, and
+>   register your own routes via `plugins/`
+> - **[training.md](training.md)** - what auto-training does
+> - **[recursive_mas_setup.md](recursive_mas_setup.md)** - terse
 >   technical reference
-> - **[main.md](main.md)** — per-file code reference
+> - **[main.md](main.md)** - per-file code reference
+
+---
+
+## Two ways to drive AGCL
+
+AGCL ships in two modes; the integration story differs depending on
+which one you target:
+
+| Mode | What it is | When to use |
+|---|---|---|
+| **TUI shell** (default) | `python main.py` opens a sustained, arrow-key-navigable terminal app with linted slash commands | End users on a single PC; no HTTP needed |
+| **Node server** (opt-in) | `python main.py node --port 9876` exposes the same engine over HTTP+SSE with bearer auth | A separate GUI talking to a user's PC |
+
+The server is a feature, **not the default startup path**. Everything
+below targets the node-server mode since that's what a GUI integrates
+with. The TUI hits the same Python APIs in process, so every feature
+described here is also reachable from the shell as a slash command.
 
 ---
 
@@ -29,7 +51,7 @@ event format, and the CORS posture.
 
    ```
    ============================================================
-     openslock node — ready
+     AGCL node - ready
    ============================================================
      bind:        127.0.0.1:9876
      cors:        *
@@ -107,7 +129,7 @@ GET /node/health
 ```json
 {
   "ok": true,
-  "service": "openslock-node",
+  "service": "agcl-node",
   "version": "1",
   "issued_at": 1715200000.123
 }
@@ -136,7 +158,7 @@ view: providers, MAS shape, local model path, saved topics count.
 
 ```json
 {
-  "service": "openslock-node",
+  "service": "agcl-node",
   "platform": {
     "state_dir":     ".agent_state",
     "default_cloud": "claude",
@@ -409,12 +431,37 @@ Drop the loaded MAS singleton + all sessions; the next `/mas/run` will
 rebuild from the current config. Use this after `PUT /config/mas` or a
 `PATCH /config` that returned `requires_restart: true` if you don't
 want to actually restart the process. (HF model weights stay in the
-filesystem cache so rebuild is reasonably quick — a few seconds per
+filesystem cache so rebuild is reasonably quick - a few seconds per
 agent.)
 
 ```json
 {"ok": true}
 ```
+
+---
+
+### Training control + latent-space inspection
+
+These endpoints let a GUI **halt, pause, and resume training mid-run**,
+inspect the latent vector currently flowing through the recursive MAS
+loop, and discover plugin-registered routes. They're the pluggable
+control surface for the recursive feature; the full reference lives in
+**[endpoint.md](endpoint.md)**.
+
+| Endpoint | Effect |
+|---|---|
+| `POST /node/mas/sessions/{sid}/pause`  | Block the training loop at its next step boundary (resumable) |
+| `POST /node/mas/sessions/{sid}/resume` | Unblock a paused loop |
+| `POST /node/mas/sessions/{sid}/halt`   | Halt training; the SSE stream emits `halted` then `done` |
+| `GET  /node/mas/sessions/{sid}/status` | Return the current control state (`stage`, `step`, `paused`, `halted`) |
+| `GET  /node/mas/sessions/{sid}/latent` | Snapshot the most recently observed loop latent (truncated) |
+| `GET  /node/plugins`                   | List loaded plugins + their load status |
+
+A control request takes effect at the next training step boundary, so
+worst-case latency is one step (typically tens of milliseconds for
+Stage A, low seconds for Stage B). The corresponding SSE events
+emitted on `/node/mas/stream` are `paused`, `resumed`, `halted`, and
+`halted_done`; see endpoint.md for payload shapes.
 
 ---
 

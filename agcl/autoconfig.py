@@ -98,7 +98,7 @@ def ensure_env_file() -> Path:
             shutil.copy(example, env)
             _ok("created .env from .env.example")
         else:
-            env.write_text("# openslock env file\n")
+            env.write_text("# agcl env file\n")
             _ok("created empty .env")
 
     text = env.read_text()
@@ -163,7 +163,7 @@ def check_transformers(install: bool = False) -> bool:
 
 
 def run_framework_selftest() -> bool:
-    from openslock.recursive import validate as rv
+    from agcl.recursive import validate as rv
     ok = rv.run_all(verbose=False)
     if ok:
         _ok(f"{len(rv.TESTS)}/{len(rv.TESTS)} framework tests passed")
@@ -176,9 +176,9 @@ def run_framework_selftest() -> bool:
 def download_models() -> bool:
     """Trigger HF downloads by building the MAS — first call pulls weights."""
     try:
-        from openslock.recursive import build_from_config
+        from agcl.recursive import build_from_config
     except ImportError as e:
-        _warn(f"openslock.recursive not importable: {e}")
+        _warn(f"agcl.recursive not importable: {e}")
         return False
     print("         (this can take several minutes on first run)")
     try:
@@ -195,7 +195,7 @@ def download_models() -> bool:
 
 def run(force: bool = False, install_deps: bool = False,
         download: bool = False) -> int:
-    print("openslock autoconfig — preparing project for HF RecursiveMAS")
+    print("agcl autoconfig — preparing project for HF RecursiveMAS")
     print(f"  project root: {PROJECT_ROOT}")
 
     total = 6 if download else 5

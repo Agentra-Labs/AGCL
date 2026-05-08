@@ -20,7 +20,7 @@ Flow:
      MAS_CONFIG_FILE / MAS_PATTERN / MAS_ROUNDS
 
 Pure stdlib I/O — no extra deps. Works as `python main.py --config` or
-`python -m openslock.configurator`.
+`python -m agcl.configurator`.
 """
 
 from __future__ import annotations
@@ -252,7 +252,7 @@ def _patch_env(pattern: str, rounds: int) -> None:
 
     if lines and lines[-1].strip():
         lines.append("")
-    lines.append("# added by openslock configurator")
+    lines.append("# added by agcl configurator")
     for k, v in additions.items():
         lines.append(f"{k}={v}")
     p.write_text("\n".join(lines) + "\n")
@@ -264,7 +264,7 @@ def _patch_env(pattern: str, rounds: int) -> None:
 def run() -> int:
     print()
     _hr()
-    print("  openslock — interactive RecursiveMAS configurator")
+    print("  agcl — interactive RecursiveMAS configurator")
     _hr()
     print("  press ctrl+c at any time to abort.")
 

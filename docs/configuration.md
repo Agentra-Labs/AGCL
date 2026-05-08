@@ -1,6 +1,6 @@
 # Configuration — what every knob does, in plain English
 
-This doc explains every setting in openslock and what changes when you
+This doc explains every setting in agcl and what changes when you
 flip it. It's organized by **what you might want to do** rather than by
 file, so you can scan for your goal and find the right knob.
 
@@ -22,7 +22,7 @@ It assumes you've at least run the project once. If not, start at
 
 ## How config layers work
 
-openslock checks settings in this order:
+agcl checks settings in this order:
 
 ```
 1. command-line flag      (highest priority — wins)
@@ -45,7 +45,7 @@ Keys live in a few places:
   by default.
 - **CLI flags** — per-run overrides that don't deserve a permanent home.
 
-You almost never edit `openslock/config.py` directly. It's the
+You almost never edit `agcl/config.py` directly. It's the
 defaults-of-last-resort, not a place to put your settings.
 
 ---
@@ -302,7 +302,7 @@ You have three places HF models can live:
 
 Default. The first run pulls the model from huggingface.co into a
 cache directory. Subsequent runs use the cache. The cache is in
-`models/hf/` inside this project (set by openslock via `HF_HOME`).
+`models/hf/` inside this project (set by agcl via `HF_HOME`).
 
 Pros: zero setup. Cons: first run waits for download; HF's free tier
 rate-limits unauthenticated requests; cache can be evicted.

@@ -9,7 +9,7 @@ It returns (prefix_string, latency_sec).
 import re
 import time
 import threading
-from openslock.config import (
+from agcl.config import (
     LOCAL_MODEL_PATH,
     LOCAL_MODEL_TYPE,
     LOCAL_N_CTX,
@@ -18,7 +18,7 @@ from openslock.config import (
     PREFIX_WORD_COUNT,
 )
 
-from openslock.templates import MODEL_TEMPLATES
+from agcl.templates import MODEL_TEMPLATES
 
 
 # Signals that the small local model is regurgitating training-data garbage

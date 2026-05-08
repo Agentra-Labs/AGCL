@@ -1,4 +1,4 @@
-# Beginner's guide — getting openslock running
+# Beginner's guide — getting agcl running
 
 This is a step-by-step walkthrough for someone who has never set up a
 Python project before. If you can open a terminal and copy-paste, you
@@ -22,7 +22,7 @@ You will need about 15 minutes and an internet connection.
 
 ---
 
-## What openslock does, in one paragraph
+## What agcl does, in one paragraph
 
 You type a question. A tiny model on your computer fires off the first
 few words instantly so you see something on screen right away. Then a
@@ -58,10 +58,10 @@ That's it.
 If you got the code as a zip, unzip it somewhere you'll remember (e.g.
 your `Desktop`). Then open a terminal and `cd` into that folder:
 
-    cd ~/Desktop/openslock
+    cd ~/Desktop/agcl
 
 You should see files like `main.py`, `readme.md`, and a folder called
-`openslock/`. If `ls` (or `dir` on Windows) shows those, you're in the
+`agcl/`. If `ls` (or `dir` on Windows) shows those, you're in the
 right place.
 
 ---
@@ -163,13 +163,13 @@ small. A good first pick is **SmolLM2-135M** (about 100 MB):
    even smaller one). Click the **download** arrow on the right.
 4. Move the downloaded file into the `models/` folder of this project.
 
-Now tell openslock where it is. Open `.env` again and add a line:
+Now tell agcl where it is. Open `.env` again and add a line:
 
     LOCAL_MODEL_PATH=models/SmolLM2-135M.Q2_K.gguf
 
 (Replace the filename with whatever you actually downloaded.)
 
-If you'd rather not deal with this, openslock will still run — it just
+If you'd rather not deal with this, agcl will still run — it just
 won't have a fast first-words feature. But the model file is tiny,
 worth grabbing.
 
@@ -318,7 +318,7 @@ when you're curious:
   (auto-created)
 - `mas.json` — your recursive multi-agent recipe (created by
   `--config` or `--autoconfig`)
-- `openslock/config.py` — defaults for everything tunable
+- `agcl/config.py` — defaults for everything tunable
 - `docs/configuration.md` — every config knob explained simply
 - `docs/training.md` — how the recursive feature auto-trains
 - `docs/advanced_guide.md` — picking models for the recursive feature

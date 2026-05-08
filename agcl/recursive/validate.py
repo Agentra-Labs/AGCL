@@ -14,7 +14,7 @@ and checks behaviors the paper specifies:
     8. Stage-2 full-loop helper reduces cross-entropy on a tiny synthetic task.
     9. Pattern builders produce a working MAS.
 
-Run:  python -m openslock.recursive.validate
+Run:  python -m agcl.recursive.validate
 """
 
 from __future__ import annotations
@@ -372,7 +372,7 @@ def t_build_mas_from_specs_dispatches_pattern():
         return RecursiveAgent(_MockTextBackend(16, supports_injection_=True),
                               role=spec.get("role", ""))
 
-    import openslock.recursive.builder as bld
+    import agcl.recursive.builder as bld
     orig = bld.build_agent
     bld.build_agent = fake_build
     try:
@@ -393,7 +393,7 @@ def t_build_mas_from_specs_dispatches_pattern():
 
 def t_config_load_paths():
     """config.MAS_AGENTS is parsed into a list of dicts with required keys."""
-    from openslock import config as cfg
+    from agcl import config as cfg
     assert isinstance(cfg.MAS_AGENTS, list)
     for spec in cfg.MAS_AGENTS:
         assert "backend" in spec, f"spec missing 'backend': {spec}"

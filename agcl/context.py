@@ -11,7 +11,7 @@ truncation if no API keys are set — so the thing never crashes.
 """
 
 import asyncio
-from openslock.config import MAX_CONTEXT_TOKENS, RECONTEX_KEEP_RECENT
+from agcl.config import MAX_CONTEXT_TOKENS, RECONTEX_KEEP_RECENT
 
 # token counting — use tiktoken if available, else rough char estimate
 try:
@@ -35,7 +35,7 @@ def needs_recontex(messages):
 
 async def _summarize_via_cloud(messages):
     """Ask cloud to compress older turns into a short summary."""
-    import openslock.cloud as cl
+    import agcl.cloud as cl
     combined = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages)
     prompt = [
         {"role": "system", "content": "Summarize the following conversation history concisely in 3-5 sentences. Preserve key facts, decisions, and context."},

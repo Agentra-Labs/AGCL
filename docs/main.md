@@ -528,7 +528,7 @@ connection error immediately.
     openai              OpenAI SDK
     anthropic           Anthropic SDK
     tiktoken            accurate token counting (optional but recommended)
-    torch               required by openslock.recursive
+    torch               required by agcl.recursive
     transformers        optional, only for RecursiveAgent.from_pretrained
 
 To install:
@@ -539,7 +539,7 @@ For llama-cpp-python with GPU support, install separately:
 
 ---
 
-## openslock/recursive/  (RecursiveMAS)
+## agcl/recursive/  (RecursiveMAS)
 
 Recursive multi-agent reasoning that passes latent embeddings between agents
 instead of round-tripping through text. Two small projection MLPs sit between

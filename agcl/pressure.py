@@ -6,7 +6,7 @@ Call record() after each cloud call; read pressure() anywhere.
 
 import time
 from collections import deque
-from openslock.config import PRESSURE_WINDOW_SEC, PRESSURE_LIMIT
+from agcl.config import PRESSURE_WINDOW_SEC, PRESSURE_LIMIT
 
 _timestamps = deque()       # request finish times inside window
 _latencies  = deque(maxlen=50)  # rolling last-50 latencies (seconds)

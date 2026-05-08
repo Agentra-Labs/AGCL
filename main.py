@@ -1,10 +1,13 @@
 """
-Entry point. Run with:
-  python main.py                         # CLI client (auto-starts server)
-  python main.py --session work          # named session
-  python main.py --provider openai       # force provider
-  python main.py --recovery humor        # recovery mode
-  python main.py serve --port 8000       # run the server in the foreground
+AGCL - Agentic CLI. Entry point.
+
+Run with:
+  python main.py                         # persistent TUI shell (default)
+  python main.py shell                   # same as default
+  python main.py chat                    # legacy chat client (auto-starts server)
+  python main.py serve --port 8000       # run the FastAPI server in the foreground
+  python main.py node --port 9876        # expose this PC to a GUI client
+  python main.py recursive run           # recursive multi-agent reasoning
   uvicorn main:app --reload --port 8000  # equivalent to `serve`
 
 Endpoints:
@@ -30,13 +33,13 @@ import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 
-import openslock.state as state
-import openslock.pressure as prs
-import openslock.patterns as patterns
-import openslock.context as context
-from openslock.local_llm import generate_prefix, unload as unload_local_model
-from openslock.cloud import stream_continuation
-from openslock.config import IDLE_FLUSH_SEC
+import agcl.state as state
+import agcl.pressure as prs
+import agcl.patterns as patterns
+import agcl.context as context
+from agcl.local_llm import generate_prefix, unload as unload_local_model
+from agcl.cloud import stream_continuation
+from agcl.config import IDLE_FLUSH_SEC
 
 DEFAULT_PORT = 8000
 
@@ -238,7 +241,7 @@ def _run_serve(args):
 
 def _run_node(args):
     """
-    Open this PC's openslock install to an authorized GUI client. Generates
+    Open this PC's agcl install to an authorized GUI client. Generates
     (or reuses) a bearer auth key and starts the node FastAPI server.
 
     The user runs this on their own computer:
@@ -246,9 +249,9 @@ def _run_node(args):
     and pastes the printed key into a remote GUI on the same machine.
     """
     import uvicorn
-    from openslock.node import build_node_app, current_key
+    from agcl.node import build_node_app, current_key
 
-    custom = args.auth_key or os.environ.get("OPENSLOCK_NODE_AUTH") or None
+    custom = args.auth_key or os.environ.get("AGCL_NODE_AUTH") or None
     cors = [o.strip() for o in args.cors.split(",") if o.strip()] or ["*"]
 
     # Build the app once so the key is fixed before we hand off to uvicorn.
@@ -256,7 +259,7 @@ def _run_node(args):
 
     print()
     print("=" * 60)
-    print("  openslock node — ready")
+    print("  AGCL node - ready")
     print("=" * 60)
     print(f"  bind:        {args.bind}:{args.port}")
     print(f"  cors:        {', '.join(cors)}")
@@ -277,16 +280,16 @@ def _run_node(args):
 
 def _run_recursive(args):
     """Recursive-MAS feature: validate, inspect config, or run a prompt."""
-    from openslock.recursive import validate as rv
+    from agcl.recursive import validate as rv
 
     if args.action == "validate":
         ok = rv.run_all()
         sys.exit(0 if ok else 1)
 
     if args.action == "info":
-        from openslock import config as cfg
-        from openslock.recursive import persistence as rp
-        print("openslock — RecursiveMAS modules:")
+        from agcl import config as cfg
+        from agcl.recursive import persistence as rp
+        print("agcl — RecursiveMAS modules:")
         print("  InnerLink, OuterLink              — projection links")
         print("  HFBackend, GGUFBackend            — model backends")
         print("  RecursiveAgent, RecursiveMAS      — agent wrapper + loop controller")
@@ -321,11 +324,11 @@ def _run_recursive(args):
         return
 
     if args.action == "run":
-        from openslock.recursive import build_from_config, RecursiveSession
+        from agcl.recursive import build_from_config, RecursiveSession
 
-        print("[openslock] building MAS from config...")
+        print("[agcl] building MAS from config...")
         mas = build_from_config()
-        print(f"[openslock] {len(mas.agents)} agents, {mas.n_rounds} rounds, dims={mas.dims}")
+        print(f"[agcl] {len(mas.agents)} agents, {mas.n_rounds} rounds, dims={mas.dims}")
 
         sess = RecursiveSession(
             mas,
@@ -356,7 +359,7 @@ def _run_recursive(args):
         cont_state = "ON" if args.continue_with_cloud else "off"
         persist_state = "off" if args.no_persist else "ON"
         print(
-            "\n[openslock] interactive mode\n"
+            "\n[agcl] interactive mode\n"
             "  first turn (or new topic) bootstraps training from cloud, then\n"
             "  follow-ups run locally with cloud auto-fallback on degenerate output.\n"
             "  topics are indexed and reused when similar questions return.\n"
@@ -401,7 +404,7 @@ def _run_recursive(args):
                     msg, force_cloud=force_cloud, force_continue=force_continue,
                 ))
             except Exception as e:
-                print(f"[openslock] error: {type(e).__name__}: {e}")
+                print(f"[agcl] error: {type(e).__name__}: {e}")
                 continue
             print(f"agent: {out}\n")
         return
@@ -416,7 +419,7 @@ def _next_line(prompt: str) -> str:
 
 
 def _print_topics(state_dir: str) -> None:
-    from openslock.recursive import persistence as P
+    from agcl.recursive import persistence as P
     rows = P.list_topics(state_dir)
     if not rows:
         print("  (no saved topics)")
@@ -427,7 +430,7 @@ def _print_topics(state_dir: str) -> None:
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="openslock")
+    ap = argparse.ArgumentParser(prog="agcl")
     sub = ap.add_subparsers(dest="cmd")
 
     # `serve` runs the FastAPI app via uvicorn
@@ -437,12 +440,16 @@ def main():
     sp.add_argument("--reload",    action="store_true")
     sp.add_argument("--log-level", default="info")
 
-    # `chat` (default) opens the terminal client
-    cp = sub.add_parser("chat", help="open the terminal client (default)")
+    # `chat` opens the legacy chat client (auto-starts server). The TUI
+    # shell is the new default; this stays for backward compatibility.
+    cp = sub.add_parser("chat", help="legacy chat client (auto-starts server)")
     cp.add_argument("--session",  default="default")
     cp.add_argument("--provider", default=None, choices=["openai", "claude"])
     cp.add_argument("--recovery", default="natural", choices=["natural", "humor", "explicit"])
     cp.add_argument("--port",     default=DEFAULT_PORT, type=int)
+
+    # `shell` opens the persistent TUI (default action when no subcommand)
+    sub.add_parser("shell", help="persistent TUI shell with arrow-key menus (default)")
 
     # `recursive` exposes the recursive-MAS feature
     rp = sub.add_parser("recursive", help="recursive multi-agent system feature")
@@ -484,7 +491,7 @@ def main():
     np.add_argument("--port",      default=9876, type=int,
         help="port to listen on (default 9876; editable)")
     np.add_argument("--auth-key",  default=None,
-        help="reuse a specific auth key (overrides OPENSLOCK_NODE_AUTH)")
+        help="reuse a specific auth key (overrides AGCL_NODE_AUTH)")
     np.add_argument("--cors",      default="*",
         help="comma-separated CORS origins; default '*' (browser-friendly)")
     np.add_argument("--log-level", default="warning",
@@ -514,11 +521,11 @@ def main():
     args = ap.parse_args()
 
     if args.config:
-        from openslock.configurator import run as run_configurator
+        from agcl.configurator import run as run_configurator
         sys.exit(run_configurator())
 
     if args.autoconfig:
-        from openslock.autoconfig import run as run_autoconfig
+        from agcl.autoconfig import run as run_autoconfig
         sys.exit(run_autoconfig())
 
     if args.cmd == "serve":
@@ -528,12 +535,17 @@ def main():
     elif args.cmd == "recursive":
         _run_recursive(args)
     elif args.cmd == "autoconfig":
-        from openslock.autoconfig import run as run_autoconfig
+        from agcl.autoconfig import run as run_autoconfig
         sys.exit(run_autoconfig(
             force=args.force, install_deps=args.install_deps, download=args.download,
         ))
-    else:
+    elif args.cmd == "chat":
         _run_cli(args)
+    else:
+        # default: persistent TUI shell. Server is opt-in via "serve"/"node"
+        # subcommands or the in-shell menu.
+        from agcl.tui import run as run_shell
+        sys.exit(run_shell())
 
 
 if __name__ == "__main__":

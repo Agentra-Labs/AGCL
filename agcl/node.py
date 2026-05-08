@@ -1,5 +1,5 @@
 """
-Node server — exposes one user's openslock install to an authorized GUI
+Node server — exposes one user's agcl install to an authorized GUI
 client over HTTP + SSE with bearer-token auth and permissive CORS.
 
 Lifecycle:
@@ -17,7 +17,7 @@ topic index, and session management.
 
 The auth key lives in process memory. Killing the node invalidates it.
 A custom key can be passed via `--auth-key <KEY>` (or env
-`OPENSLOCK_NODE_AUTH`) for setups where the key needs to survive restarts.
+`AGCL_NODE_AUTH`) for setups where the key needs to survive restarts.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ _mas_sessions: Dict[str, Any] = {}    # session_id -> RecursiveSession
 def _build_mas_singleton():
     """Build the MAS once per process (loading models is expensive)."""
     if _mas_singleton["mas"] is None:
-        from openslock.recursive import build_from_config
+        from agcl.recursive import build_from_config
         _mas_singleton["mas"] = build_from_config()
     return _mas_singleton["mas"]
 
@@ -185,7 +185,7 @@ class ChatTurn(BaseModel):
 def _get_or_make_mas_session(body: MasTurn):
     if body.session_id in _mas_sessions:
         return _mas_sessions[body.session_id]
-    from openslock.recursive import RecursiveSession
+    from agcl.recursive import RecursiveSession
     mas = _build_mas_singleton()
     kwargs: Dict[str, Any] = {}
     for k in ("switch_threshold", "retrieval_threshold", "stage1_steps",
@@ -213,7 +213,7 @@ def make_node_router() -> APIRouter:
     @r.get("/health")
     def health():
         return {
-            "ok": True, "service": "openslock-node",
+            "ok": True, "service": "agcl-node",
             "version": "1",
             "issued_at": _NODE_AUTH.get("issued_at"),
         }
@@ -231,10 +231,10 @@ def make_node_router() -> APIRouter:
 
     @r.get("/info")
     def info():
-        from openslock import config as cfg
-        from openslock.recursive import persistence as P
+        from agcl import config as cfg
+        from agcl.recursive import persistence as P
         return {
-            "service": "openslock-node",
+            "service": "agcl-node",
             "platform": {
                 "state_dir": cfg.STATE_DIR,
                 "default_cloud": cfg.DEFAULT_CLOUD,
@@ -264,7 +264,7 @@ def make_node_router() -> APIRouter:
 
     @r.get("/config")
     def get_config():
-        from openslock import config as cfg
+        from agcl import config as cfg
         return {
             "cloud": {
                 "default":        cfg.DEFAULT_CLOUD,
@@ -353,7 +353,7 @@ def make_node_router() -> APIRouter:
 
     @r.get("/config/mas")
     def get_mas_json():
-        from openslock import config as cfg
+        from agcl import config as cfg
         p = Path("mas.json")
         if p.exists():
             return {"source": "mas.json",
@@ -377,14 +377,14 @@ def make_node_router() -> APIRouter:
 
     @r.get("/topics")
     def list_topics():
-        from openslock import config as cfg
-        from openslock.recursive import persistence as P
+        from agcl import config as cfg
+        from agcl.recursive import persistence as P
         return {"topics": P.list_topics(cfg.STATE_DIR)}
 
     @r.delete("/topics/{topic_id}")
     def del_topic(topic_id: str):
-        from openslock import config as cfg
-        from openslock.recursive import persistence as P
+        from agcl import config as cfg
+        from agcl.recursive import persistence as P
         if not P.delete_topic(cfg.STATE_DIR, topic_id):
             raise HTTPException(404, "topic not found")
         return {"ok": True}
@@ -462,9 +462,16 @@ def make_node_router() -> APIRouter:
                                    "text": out,
                                    "topic_id": sess.current_topic_id})
             except Exception as e:
-                queue.put_nowait({"event": "error",
-                                   "type": type(e).__name__,
-                                   "message": str(e)})
+                from agcl.recursive.control import HaltedError
+                if isinstance(e, HaltedError):
+                    # auto_train already emitted `halted` via the gate; just
+                    # close the stream cleanly without an error banner.
+                    queue.put_nowait({"event": "halted_done",
+                                      "message": str(e)})
+                else:
+                    queue.put_nowait({"event": "error",
+                                       "type": type(e).__name__,
+                                       "message": str(e)})
             finally:
                 queue.put_nowait(DONE)
 
@@ -531,6 +538,60 @@ def make_node_router() -> APIRouter:
         _reset_mas_singleton()
         return {"ok": True}
 
+    # ---- training control: pause / resume / halt / latent / status ----
+    # All four endpoints address an existing in-memory session by id. They
+    # mutate the session's TrainingControl handle, which the auto_train
+    # loop polls between steps. Effects are observed in the SSE stream as
+    # `paused`, `resumed`, `halted` events.
+
+    def _require_session(sid: str):
+        if sid not in _mas_sessions:
+            raise HTTPException(404, "session not found")
+        return _mas_sessions[sid]
+
+    @r.post("/mas/sessions/{sid}/pause")
+    def mas_pause(sid: str):
+        s = _require_session(sid)
+        s.control.pause()
+        return {"ok": True, "status": s.control.status()}
+
+    @r.post("/mas/sessions/{sid}/resume")
+    def mas_resume(sid: str):
+        s = _require_session(sid)
+        s.control.resume()
+        return {"ok": True, "status": s.control.status()}
+
+    @r.post("/mas/sessions/{sid}/halt")
+    def mas_halt(sid: str):
+        """Halt training mid-run. Raises HaltedError inside the loop; the
+        SSE stream emits a `halted` event then `done`."""
+        s = _require_session(sid)
+        s.control.halt()
+        return {"ok": True, "status": s.control.status()}
+
+    @r.get("/mas/sessions/{sid}/status")
+    def mas_status(sid: str):
+        return {"ok": True, "status": _require_session(sid).control.status()}
+
+    @r.get("/mas/sessions/{sid}/latent")
+    def mas_latent(sid: str):
+        """Return a snapshot of the most recently observed loop latent.
+        Useful for inspecting the latent space mid-training. Returns
+        `{snapshot: null}` when no latent has been recorded yet."""
+        s = _require_session(sid)
+        return {"ok": True, "snapshot": s.control.latent_snapshot()}
+
+    # ---- plugins ----
+    # A plugin is a Python file in `plugins/` that exposes a `register(ctx)`
+    # function. `ctx` is a small object giving the plugin access to the
+    # node router, the MAS singleton accessor, and the session map. The
+    # contract is documented in docs/endpoint.md.
+
+    @r.get("/plugins")
+    def list_plugins():
+        from agcl.plugins import loaded as _loaded
+        return {"plugins": _loaded()}
+
     # ---- main-agent chat passthrough (delegates to existing /chat route) ----
     # The existing /chat/{session_id} endpoint in main.py already does
     # streaming. We re-expose it under /node/chat/{session_id} so the GUI
@@ -554,12 +615,12 @@ def make_node_router() -> APIRouter:
 
     @r.get("/sessions")
     def list_chat_sessions():
-        from openslock import state as S
+        from agcl import state as S
         return {"sessions": list(S.session_list())}
 
     @r.get("/sessions/{sid}")
     def get_chat_session(sid: str):
-        from openslock import state as S
+        from agcl import state as S
         sess = S.get_session(sid)
         return {
             "session_id":    sid,
@@ -571,7 +632,7 @@ def make_node_router() -> APIRouter:
 
     @r.delete("/sessions/{sid}")
     def del_chat_session(sid: str):
-        from openslock import state as S
+        from agcl import state as S
         S.flush_session(sid)
         return {"ok": True, "flushed": sid}
 
@@ -585,7 +646,7 @@ def make_node_router() -> APIRouter:
 def build_node_app(auth_key: Optional[str] = None,
                     cors_origins: Optional[List[str]] = None) -> FastAPI:
     """
-    Wraps the main openslock FastAPI app with auth + CORS + node routes.
+    Wraps the main agcl FastAPI app with auth + CORS + node routes.
     Returns a FastAPI app ready to be passed to uvicorn.
 
     Order of middleware registration matters: auth is added FIRST so it
@@ -608,5 +669,14 @@ def build_node_app(auth_key: Optional[str] = None,
         allow_headers=["Authorization", "Content-Type"],
         expose_headers=["Content-Type"],
     )
-    base_app.include_router(make_node_router())
+    router = make_node_router()
+    # Plugins register additional routes on the same APIRouter so they live
+    # under /node/* alongside the built-ins. Failures in one plugin must
+    # not break the others — load_plugins handles that internally.
+    try:
+        from agcl import plugins as _plg
+        _plg.load_plugins(router)
+    except Exception:
+        pass
+    base_app.include_router(router)
     return base_app

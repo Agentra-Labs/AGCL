@@ -57,7 +57,7 @@ about.
 
 ## The three pieces
 
-`RecursiveSession` (defined in `openslock/recursive/session.py`) does
+`RecursiveSession` (defined in `agcl/recursive/session.py`) does
 three things in order on each conversation turn:
 
 ```
@@ -200,9 +200,9 @@ scratch on this topic**. This has three sub-steps. They're the same
 three steps you see scrolling in the terminal:
 
 ```
-[openslock] bootstrapping training from cloud...
-[openslock] cloud answer: 412 chars, 6 reformulations
-[openslock] training links (stage A: 30 steps, stage B: 20 steps)...
+[agcl] bootstrapping training from cloud...
+[agcl] cloud answer: 412 chars, 6 reformulations
+[agcl] training links (stage A: 30 steps, stage B: 20 steps)...
   [stage A]   1/30  cos-loss=0.9234
   [stage A]  10/30  cos-loss=0.4801
   [stage A]  20/30  cos-loss=0.1742
@@ -211,7 +211,7 @@ three steps you see scrolling in the terminal:
   [stage B]   5/20  ce=6.7012
   [stage B]  10/20  ce=5.1408
   [stage B]  20/20  ce=3.0521
-[openslock] persisted topic 92ff1629f157
+[agcl] persisted topic 92ff1629f157
 ```
 
 The next three sections walk through each line.
@@ -461,11 +461,11 @@ solver that produces a useful answer."
 ## Manual training (the older API)
 
 The auto-training above wraps a lower-level API in
-`openslock/recursive/train.py`. You can call those directly when you
+`agcl/recursive/train.py`. You can call those directly when you
 want full control or you have your own dataset:
 
 ```python
-from openslock.recursive import (
+from agcl.recursive import (
     build_from_config, stage1_warmup_inner, stage2_full_loop,
 )
 
@@ -544,6 +544,6 @@ noticeable.
 - **[recursive_mas_setup.md](recursive_mas_setup.md)** — the terse
   technical reference
 - The actual code is small: see
-  `openslock/recursive/auto_train.py`,
-  `openslock/recursive/session.py`,
-  `openslock/recursive/persistence.py`.
+  `agcl/recursive/auto_train.py`,
+  `agcl/recursive/session.py`,
+  `agcl/recursive/persistence.py`.

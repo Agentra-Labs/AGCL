@@ -1,4 +1,4 @@
-# openslock
+# agcl
 
 > **Documentation map**
 >
@@ -75,7 +75,7 @@ CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall
 ## Setup
 
 API keys live in a gitignored `.env` file at the project root, loaded by
-`openslock/secrets.py`. Copy the template and fill it in:
+`agcl/secrets.py`. Copy the template and fill it in:
 
 ```bash
 cp .env.example .env
@@ -286,7 +286,7 @@ Full function-level documentation for each file is in `docs/main.md`.
 
 ## RecursiveMAS
 
-`openslock/recursive/` implements recursive multi-agent reasoning that
+`agcl/recursive/` implements recursive multi-agent reasoning that
 passes latent embeddings between agents instead of text. Two small
 residual MLPs (`InnerLink`, `OuterLink`) sit between the agents; the loop
 unrolls n rounds and only the final agent decodes text.
@@ -440,7 +440,7 @@ Deeper docs:
 
 ## Node mode (open this PC to a GUI)
 
-To use openslock as a backend for a separate GUI / web app, run it in
+To use agcl as a backend for a separate GUI / web app, run it in
 **node mode**:
 
 ```bash

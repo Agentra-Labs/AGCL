@@ -38,6 +38,7 @@ import torch.nn.functional as F
 
 from .mas import RecursiveMAS
 from .backends import HFBackend
+from .control import TrainingControl, HaltedError
 
 
 # ---------- cloud calls ----------
@@ -69,7 +70,7 @@ Reply with exactly one word: yes or no."""
 async def _cloud_call(prompt: str, provider: Optional[str] = None,
                       max_tokens: int = 1024) -> str:
     """Plain single-turn cloud call (no continuation framing)."""
-    from openslock.config import (
+    from agcl.config import (
         OPENAI_API_KEY, ANTHROPIC_API_KEY,
         OPENAI_MODEL, CLAUDE_MODEL, DEFAULT_CLOUD,
     )
@@ -152,7 +153,8 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                stage1_steps: int = 30, stage2_steps: int = 20,
                lr1: float = 1e-2, lr2: float = 1e-3,
                verbose: bool = True,
-               on_progress: Optional[Callable[[dict], None]] = None) -> dict:
+               on_progress: Optional[Callable[[dict], None]] = None,
+               control: Optional[TrainingControl] = None) -> dict:
     """
     Run two-stage cloud-teacher training in place. Returns a dict of
     per-step losses for each stage.
@@ -170,6 +172,20 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                 on_progress(ev)
             except Exception:
                 pass  # progress callbacks must never break training
+
+    def _gate(stage: str, step: int) -> None:
+        """Honor pause/halt requests at a safe point in the loop."""
+        if control is None:
+            return
+        control.mark(stage, step)
+        if control.is_paused():
+            _emit({"event": "paused", "stage": stage, "step": step})
+            control.wait_if_paused()
+            if not control.is_halted():
+                _emit({"event": "resumed", "stage": stage, "step": step})
+        if control.should_halt():
+            _emit({"event": "halted", "stage": stage, "step": step})
+            raise HaltedError(f"halted during {stage} step {step}")
 
     restore = _freeze_agents(mas)
     try:
@@ -190,8 +206,11 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
             _emit({"event": "stage1_start", "total_steps": stage1_steps})
             opt = torch.optim.AdamW(link_params, lr=lr1)
             for step in range(stage1_steps):
+                _gate("stage1", step)
                 text = prompts[step % len(prompts)]
                 latent, _ = mas.run_latent_text(text)
+                if control is not None:
+                    control.record_latent(latent)
                 tgt = target_latent.expand_as(latent)
                 loss = (1.0 - F.cosine_similarity(latent, tgt, dim=-1)).mean()
                 opt.zero_grad(); loss.backward(); opt.step()
@@ -224,8 +243,11 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                 opt2 = torch.optim.AdamW(link_params, lr=lr2)
                 embed = model.get_input_embeddings()
                 for step in range(stage2_steps):
+                    _gate("stage2", step)
                     text = prompts[step % len(prompts)]
                     latent, _ = mas.run_latent_text(text)         # [1, D]
+                    if control is not None:
+                        control.record_latent(latent)
                     prompt_ids = tok(text, return_tensors="pt",
                                      truncation=True).input_ids
                     full_ids = torch.cat(

@@ -1,4 +1,4 @@
-# openslock/templates.py
+# agcl/templates.py
 
 MODEL_TEMPLATES = {
     "gemma": {

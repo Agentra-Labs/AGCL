@@ -423,7 +423,7 @@ Useful flags:
 
 The auto-training above is meant for one-off interactive use. For real
 training on your own data, the lower-level API in
-`openslock/recursive/train.py` gives you full control.
+`agcl/recursive/train.py` gives you full control.
 
 This is only for HF agents (GGUF can't backprop). Two stages:
 
@@ -438,7 +438,7 @@ gradient.
 
 A minimal sketch:
 
-    from openslock.recursive import build_from_config, stage2_full_loop
+    from agcl.recursive import build_from_config, stage2_full_loop
 
     mas = build_from_config()         # all hf agents
 
@@ -451,7 +451,7 @@ A minimal sketch:
             print(step, loss)
 
 Runnable, fully-tested examples on tiny synthetic data live in
-`openslock/recursive/validate.py` (look at
+`agcl/recursive/validate.py` (look at
 `t_stage1_warmup_reduces_loss` and `t_stage2_full_loop_reduces_loss`).
 
 You don't have to train manually. The MAS works fine with auto-training
@@ -525,9 +525,9 @@ use `mas.generate_text(..., do_sample=False)`).
 - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
   technical reference
 - **[main.md](main.md)** — per-file code reference
-- The actual code (it's small and readable): `openslock/recursive/`
+- The actual code (it's small and readable): `agcl/recursive/`
 - The 21 validation tests double as runnable examples:
-  `openslock/recursive/validate.py`
+  `agcl/recursive/validate.py`
 
 Once you have a config that works, the only thing you really change
 day-to-day is the model ids in `mas.json`. Everything else stays put.

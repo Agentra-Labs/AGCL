@@ -1,7 +1,7 @@
 """
 End-to-end validation of an HF-backed RecursiveMAS.
 
-Builds the MAS from openslock.config, runs three real checks:
+Builds the MAS from agcl.config, runs three real checks:
 
     1. Both agents load and report correct hidden sizes.
     2. generate_text() produces a non-empty string from a real prompt.
@@ -47,14 +47,14 @@ def main():
     args = ap.parse_args()
 
     banner("1/3  building MAS from config")
-    from openslock import config as cfg
+    from agcl import config as cfg
     print(f"  pattern = {cfg.MAS_PATTERN}")
     print(f"  rounds  = {cfg.MAS_ROUNDS}")
     print(f"  agents  = {len(cfg.MAS_AGENTS)}")
     for i, s in enumerate(cfg.MAS_AGENTS):
         print(f"    [{i}] {s.get('backend')}  role={s.get('role','')}  model={s.get('model')}")
 
-    from openslock.recursive import build_from_config
+    from agcl.recursive import build_from_config
     t0 = time.time()
     mas = build_from_config()
     print(f"  loaded in {time.time() - t0:.1f}s")
@@ -110,7 +110,7 @@ def main():
                                 (args.batch_size, args.seq_len))
             yield ids, attn, tgt
 
-    from openslock.recursive import stage2_full_loop
+    from agcl.recursive import stage2_full_loop
 
     t0 = time.time()
     losses = []

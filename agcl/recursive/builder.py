@@ -2,7 +2,7 @@
 Build a RecursiveMAS from config.
 
 Reads MAS_AGENTS / MAS_PATTERN / MAS_ROUNDS / MAS_DEVICE / MAS_DTYPE from
-openslock.config and instantiates the right backends.
+agcl.config and instantiates the right backends.
 
 Models are loaded lazily, one per spec. If two specs point at the same
 model path/name they will load it twice — that is intentional, since each
@@ -114,8 +114,8 @@ def build_mas_from_specs(specs: List[Dict[str, Any]],
 
 
 def build_from_config() -> RecursiveMAS:
-    """Build the MAS using values from openslock.config."""
-    from openslock import config as cfg
+    """Build the MAS using values from agcl.config."""
+    from agcl import config as cfg
     return build_mas_from_specs(
         cfg.MAS_AGENTS,
         n_rounds=cfg.MAS_ROUNDS,

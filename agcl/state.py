@@ -9,7 +9,7 @@ import json
 import os
 import time
 import threading
-from openslock.config import STATE_DIR, IDLE_FLUSH_SEC, SESSION_TTL_SEC
+from agcl.config import STATE_DIR, IDLE_FLUSH_SEC, SESSION_TTL_SEC
 
 _sessions = {}       # session_id -> {messages, created_at, last_active}
 _lock     = threading.Lock()

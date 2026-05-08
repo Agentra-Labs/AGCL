@@ -2,7 +2,7 @@ import json
 import os
 
 # Load .env into os.environ before anything else reads getenv.
-import openslock.secrets as _secrets  # noqa: F401
+import agcl.secrets as _secrets  # noqa: F401
 
 # Project-local HuggingFace cache. Overridable via HF_HOME / HF_HUB_CACHE
 # env vars; default keeps every downloaded model under ./models/hf/ so
@@ -19,8 +19,8 @@ LOCAL_N_GPU_LAYERS = int(os.getenv("LOCAL_N_GPU_LAYERS", "0"))
 LOCAL_N_THREADS    = int(os.getenv("LOCAL_N_THREADS", "12"))
 PREFIX_WORD_COUNT  = int(os.getenv("PREFIX_WORD_COUNT", "4"))  # words local model fires before cloud takes over
 
-# cloud — API keys live in openslock/secrets.py (loaded from .env / env vars)
-from openslock.secrets import OPENAI_API_KEY, ANTHROPIC_API_KEY  # noqa: E402,F401
+# cloud — API keys live in agcl/secrets.py (loaded from .env / env vars)
+from agcl.secrets import OPENAI_API_KEY, ANTHROPIC_API_KEY  # noqa: E402,F401
 OPENAI_MODEL    = os.getenv("OPENAI_MODEL", "gpt-4o")
 CLAUDE_MODEL    = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 DEFAULT_CLOUD   = os.getenv("DEFAULT_CLOUD", "claude")   # "openai" | "claude"

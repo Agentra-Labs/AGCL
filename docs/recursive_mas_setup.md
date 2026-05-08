@@ -141,7 +141,7 @@ patterns — only the agent ordering / count expectations differ.
 
 Or in Python:
 
-    from openslock.recursive import build_from_config
+    from agcl.recursive import build_from_config
     mas = build_from_config()
     print(mas.generate_text("explain backprop in one sentence"))
 
@@ -150,7 +150,7 @@ Or in Python:
 
 If you don't want to go through env vars / config:
 
-    from openslock.recursive import RecursiveAgent, RecursiveMAS
+    from agcl.recursive import RecursiveAgent, RecursiveMAS
 
     a1 = RecursiveAgent.from_pretrained("HuggingFaceTB/SmolLM2-135M", role="planner")
     a2 = RecursiveAgent.from_gguf("models/SmolLM2-135M.Q2_K.gguf", role="critic")
@@ -161,7 +161,7 @@ If you don't want to go through env vars / config:
 
 Or from explicit specs:
 
-    from openslock.recursive import build_mas_from_specs
+    from agcl.recursive import build_mas_from_specs
     mas = build_mas_from_specs(
         specs=[
             {"backend": "hf",   "model": "HuggingFaceTB/SmolLM2-135M", "role": "planner"},
@@ -178,7 +178,7 @@ Two APIs:
 
 ### A. Manual training (offline, your own data)
 
-    from openslock.recursive import stage1_warmup_inner, stage2_full_loop
+    from agcl.recursive import stage1_warmup_inner, stage2_full_loop
 
 Stage 1 — warm up each agent's InnerLink against a target embedding using
 cosine-similarity loss. Underlying LM is frozen by default
@@ -188,13 +188,13 @@ Stage 2 — backprop cross-entropy on the final logits across the entire
 unrolled MAS. All inner/outer links + agent params receive gradient.
 
 Both helpers are step-by-step generators — the caller decides how to log
-or stop. See [validate.py](../openslock/recursive/validate.py)
+or stop. See [validate.py](../agcl/recursive/validate.py)
 `t_stage1_warmup_reduces_loss` and `t_stage2_full_loop_reduces_loss` for
 runnable examples on tiny synthetic data.
 
 ### B. Auto-training via cloud teacher (online, interactive)
 
-    from openslock.recursive import auto_train, bootstrap_pairs
+    from agcl.recursive import auto_train, bootstrap_pairs
 
 `auto_train(mas, question, answer, reformulations, ...)` runs a two-stage
 inline trainer:
@@ -209,7 +209,7 @@ inline trainer:
 `bootstrap_pairs(question)` calls cloud once and returns
 `(answer, [reformulations])` parsed from JSON.
 
-`RecursiveSession` (in `openslock/recursive/session.py`) wires these
+`RecursiveSession` (in `agcl/recursive/session.py`) wires these
 together with topic detection and persistence — see section 12.
 
 For a step-by-step explanation of what these stages are doing, see
@@ -302,7 +302,7 @@ handoff. Per-turn override: pass `force_continue=True` to `.turn()`.
 ### Programmatic use
 
     import asyncio
-    from openslock.recursive import build_from_config, RecursiveSession
+    from agcl.recursive import build_from_config, RecursiveSession
 
     mas = build_from_config()
     sess = RecursiveSession(
@@ -322,7 +322,7 @@ handoff. Per-turn override: pass `force_continue=True` to `.turn()`.
 
 The relevant helpers are exported at the package root:
 
-    from openslock.recursive import (
+    from agcl.recursive import (
         RecursiveSession, auto_train, bootstrap_pairs,
         cloud_confirm_switch, TopicTracker, persistence,
     )
@@ -342,7 +342,7 @@ model can be fully downloaded into `models/hf_local/<slug>/` so
 subsequent runs do not hit the HF Hub at all. The wizard writes
 `mas.json` and patches `.env`.
 
-Source: `openslock/configurator.py`.
+Source: `agcl/configurator.py`.
 
 For a guided walkthrough see
 [configuration.md](configuration.md#path-2-interactive-wizard---config).

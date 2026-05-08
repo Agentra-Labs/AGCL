@@ -41,6 +41,7 @@ from .mas import RecursiveMAS
 from .auto_train import (
     TopicTracker, bootstrap_pairs, cloud_confirm_switch, auto_train,
 )
+from .control import TrainingControl, HaltedError
 from . import persistence as P
 
 
@@ -59,7 +60,7 @@ def _looks_degenerate(text: str) -> bool:
 async def _cloud_full(history: List[Dict[str, str]],
                       provider: Optional[str]) -> str:
     """Plain cloud answer for the latest user turn (no local prefix)."""
-    from openslock.cloud import one_shot
+    from agcl.cloud import one_shot
     return (await one_shot(history, provider=provider)).strip()
 
 
@@ -70,7 +71,7 @@ async def _cloud_continue_prefix(history: List[Dict[str, str]],
     Cloud finishes from the given prefix (open assistant turn).
     Returns prefix + continuation.
     """
-    from openslock.cloud import stream_continuation
+    from agcl.cloud import stream_continuation
     parts: List[str] = [prefix]
     async for chunk in stream_continuation(history, prefix, provider=provider,
                                             recovery_mode="natural"):
@@ -89,7 +90,8 @@ class RecursiveSession:
                  prefix_tokens: int = 12,
                  persist: bool = True,
                  state_dir: Optional[str] = None,
-                 verbose: bool = True):
+                 verbose: bool = True,
+                 control: Optional[TrainingControl] = None):
         self.mas = mas
         self.provider = provider
         self.verbose = verbose
@@ -106,7 +108,7 @@ class RecursiveSession:
 
         self.persist = persist
         if state_dir is None:
-            from openslock.config import STATE_DIR
+            from agcl.config import STATE_DIR
             state_dir = STATE_DIR
         self.state_dir = state_dir
 
@@ -114,6 +116,7 @@ class RecursiveSession:
         self.trained_once = False
         self.topic_seed: Optional[str] = None
         self.current_topic_id: Optional[str] = None
+        self.control = control if control is not None else TrainingControl()
 
         planner = self.mas.agents[0]
 
@@ -161,7 +164,7 @@ class RecursiveSession:
                    "threshold": self.switch_threshold,
                    "candidate": candidate})
             if self.verbose and candidate:
-                print(f"[openslock] embedding sim={sim:.2f} below "
+                print(f"[agcl] embedding sim={sim:.2f} below "
                       f"{self.switch_threshold:.2f} — confirming with cloud...")
             if candidate:
                 switched = await cloud_confirm_switch(
@@ -169,7 +172,7 @@ class RecursiveSession:
                 )
                 _emit({"event": "topic_switch_confirmed", "switched": switched})
                 if self.verbose:
-                    print(f"[openslock] cloud says switch: "
+                    print(f"[agcl] cloud says switch: "
                           f"{'yes' if switched else 'no'}")
 
         # --- (2) bootstrap or retrieve ---
@@ -183,7 +186,7 @@ class RecursiveSession:
                "mode": "continuator" if use_continue else "local"})
         if self.verbose:
             mode = "local + cloud continuator" if use_continue else "local only"
-            print(f"[openslock] running ({mode})...")
+            print(f"[agcl] running ({mode})...")
 
         if use_continue:
             prefix = self.mas.generate_text(
@@ -192,7 +195,7 @@ class RecursiveSession:
             prefix = prefix.strip()
             if _looks_degenerate(prefix):
                 if self.verbose:
-                    print(f"[openslock] local prefix degenerate "
+                    print(f"[agcl] local prefix degenerate "
                           f"({prefix!r}); cloud will start clean")
                 _emit({"event": "prefix_dropped", "prefix": prefix})
                 prefix = ""
@@ -210,7 +213,7 @@ class RecursiveSession:
         ) or "").strip()
         if _looks_degenerate(out):
             if self.verbose:
-                print(f"[openslock] local output degenerate "
+                print(f"[agcl] local output degenerate "
                       f"({out!r}) — falling back to cloud")
             _emit({"event": "fallback_to_cloud", "local_output": out})
             history = self.history + [{"role": "user", "content": user_msg}]
@@ -253,13 +256,13 @@ class RecursiveSession:
                     P.load_topic(self.state_dir, self.mas, tid)
                 except Exception as e:
                     if self.verbose:
-                        print(f"[openslock] retrieval candidate {tid} "
+                        print(f"[agcl] retrieval candidate {tid} "
                               f"failed to load ({e!r}); training fresh")
                     _emit({"event": "retrieval_load_failed",
                            "topic_id": tid, "error": repr(e)})
                 else:
                     if self.verbose:
-                        print(f"[openslock] retrieved topic {tid} "
+                        print(f"[agcl] retrieved topic {tid} "
                               f"(sim={sim:.2f}, seed={meta.get('seed_question','')!r}); "
                               f"skipping training")
                     _emit({"event": "retrieval_hit",
@@ -292,7 +295,7 @@ class RecursiveSession:
         ) or "").strip()
         if _looks_degenerate(out):
             if self.verbose:
-                print(f"[openslock] retrieved topic produced "
+                print(f"[agcl] retrieved topic produced "
                       f"degenerate output; cloud fallback")
             _emit({"event": "fallback_to_cloud", "local_output": out})
             history = self.history + [{"role": "user", "content": user_msg}]
@@ -317,7 +320,7 @@ class RecursiveSession:
 
         if self.verbose:
             tag = "topic switch — re" if is_switch else ""
-            print(f"[openslock] {tag}bootstrapping training from cloud...")
+            print(f"[agcl] {tag}bootstrapping training from cloud...")
         _emit({"event": "bootstrap_start", "is_switch": is_switch})
 
         answer, reforms = await bootstrap_pairs(
@@ -329,23 +332,25 @@ class RecursiveSession:
                "answer_chars": len(answer),
                "n_reformulations": len(reforms)})
         if self.verbose:
-            print(f"[openslock] cloud answer: {len(answer)} chars, "
+            print(f"[agcl] cloud answer: {len(answer)} chars, "
                   f"{len(reforms)} reformulations")
-            print(f"[openslock] training links "
+            print(f"[agcl] training links "
                   f"(stage A: {self.stage1_steps} steps, "
                   f"stage B: {self.stage2_steps} steps)...")
 
+        self.control.reset()
         result = auto_train(
             self.mas, user_msg, answer, reforms,
             stage1_steps=self.stage1_steps,
             stage2_steps=self.stage2_steps,
             verbose=self.verbose,
             on_progress=on_progress,
+            control=self.control,
         )
         if self.verbose:
             s1, s2 = result["stage1_losses"], result["stage2_losses"]
-            if s1: print(f"[openslock] stage A: {s1[0]:.3f} -> {s1[-1]:.3f}")
-            if s2: print(f"[openslock] stage B: {s2[0]:.3f} -> {s2[-1]:.3f}")
+            if s1: print(f"[agcl] stage A: {s1[0]:.3f} -> {s1[-1]:.3f}")
+            if s2: print(f"[agcl] stage B: {s2[0]:.3f} -> {s2[-1]:.3f}")
 
         # Persist trained links + planner-embedding centroid.
         tid = None
@@ -360,12 +365,12 @@ class RecursiveSession:
                            "stage2_final": (result["stage2_losses"] or [None])[-1]},
                 )
                 if self.verbose:
-                    print(f"[openslock] persisted topic {tid} -> "
+                    print(f"[agcl] persisted topic {tid} -> "
                           f"{self.state_dir}/mas_topics/{tid}/")
                 _emit({"event": "topic_persisted", "topic_id": tid})
             except Exception as e:
                 if self.verbose:
-                    print(f"[openslock] persist failed ({e!r}); continuing in-memory")
+                    print(f"[agcl] persist failed ({e!r}); continuing in-memory")
                 _emit({"event": "topic_persist_failed", "error": repr(e)})
 
         self.history = [

@@ -9,7 +9,7 @@ Resolution order, first non-empty wins:
 Never put real keys in this file. Never commit `.env`.
 
 Usage:
-    from openslock.secrets import OPENAI_API_KEY, ANTHROPIC_API_KEY
+    from agcl.secrets import OPENAI_API_KEY, ANTHROPIC_API_KEY
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Dict
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_ENV_PATH = Path(os.getenv("OPENSLOCK_ENV_FILE", _PROJECT_ROOT / ".env"))
+_ENV_PATH = Path(os.getenv("AGCL_ENV_FILE", _PROJECT_ROOT / ".env"))
 
 
 def _load_dotenv(path: Path) -> Dict[str, str]:
