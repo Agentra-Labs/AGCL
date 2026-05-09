@@ -59,6 +59,7 @@ def current_key() -> Optional[str]:
 PUBLIC_PATHS = {
     "/node/health",
     "/node/auth/verify",
+    "/node/dashboard",     # static HTML; auth happens on the data fetches
     "/docs", "/openapi.json", "/redoc",
 }
 

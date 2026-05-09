@@ -567,3 +567,32 @@ present. Full doc: [`../integrations/multica.md`](../integrations/multica.md).
 | `GET  /node/multica/health` | `{"agcl": "ready", ...}` — pre-flight before assigning tasks |
 | `GET  /node/multica/skills?workdir=<path>` | read injected skills from `<workdir>/.agcl/context.md` and `.agcl/skills/*.md` |
 | `POST /node/multica/run` | run a Multica task body, stream the unified jsonl event taxonomy as SSE |
+
+---
+
+## Usage, quotas, custom providers
+
+Every cloud call AGCL makes is recorded with a `kind` tag (`chat` /
+`knowledge` / `summarize` / `other`) so a GUI can split user-turn
+spend from cloud-teacher / training-bootstrap spend. Full feature
+reference: [`../dashboard.md`](../dashboard.md).
+
+| Endpoint | Effect |
+|---|---|
+| `GET  /node/dashboard` | static SPA dashboard (auth via paste-once) |
+| `GET  /node/usage/summary` | one blob: provider snapshot + sessions table |
+| `GET  /node/usage/providers` | provider snapshot (lifetime / daily / monthly totals + quota status) |
+| `GET  /node/usage/sessions` | one row per session, sorted by `last_ts` |
+| `GET  /node/usage/sessions/{sid}` | per-kind in/out tokens + cost for one session |
+| `GET  /node/usage/timeseries?session_id=&provider=&kind=&bucket_sec=60&lookback_sec=3600` | bucketed token + cost series for graphs |
+| `GET  /node/usage/quotas` | every quota currently set |
+| `PUT  /node/usage/quota/{provider}` | `{max_tokens?, max_credit_usd?, period}` (`lifetime` / `daily` / `monthly`) |
+| `DELETE /node/usage/quota/{provider}` | clear |
+| `GET  /node/usage/providers/custom` | list user-registered OpenAI-compatible providers |
+| `POST /node/usage/providers/custom` | `{name, base_url, api_key_env, model, kind?, notes?}` |
+| `DELETE /node/usage/providers/custom/{name}` | unregister |
+
+When a quota is exceeded, the next cloud call raises
+`agcl.usage.QuotaExceeded` and never goes out. Check
+`/node/usage/providers` for `quota.remaining_tokens` /
+`quota.remaining_credit_usd` before initiating expensive work.

@@ -89,6 +89,10 @@ exactly.
 | `miniStatus()` / `miniGetConfig()` / `miniPatchConfig(p)` / `miniStart()` / `miniStop()` / `miniPause()` / `miniResume()` / `miniTest({prompt})` / `miniCheckpoint()` / `miniPresets()` | mini-model trainer |
 | `chatStream(sid, body)` | `POST /node/chat/{sid}` (SSE) |
 | `listChatSessions()` / `getChatSession(sid)` / `deleteChatSession(sid)` | main-agent sessions |
+| `usageSummary()` / `usageProviders()` / `usageSessions()` / `usageSessionDetail(sid)` | dashboard data |
+| `usageTimeseries({session_id?, provider?, kind?, bucket_sec?, lookback_sec?})` | bucketed token + cost series |
+| `usageQuotas()` / `setUsageQuota(provider, body)` / `deleteUsageQuota(provider)` | per-provider caps |
+| `listCustomProviders()` / `registerCustomProvider(body)` / `deleteCustomProvider(name)` | OpenAI-compatible custom providers |
 
 Plus the lower-level escape hatches `request<T>(path, init)` and
 `stream<T>(path, init)` for any route the wrapper doesn't surface yet.
@@ -133,11 +137,47 @@ Full toolkit method list: [`clients/npm/src/toolkit.ts`](../../clients/npm/src/t
 
 ---
 
-## React / Vue / Svelte
+## Vue composables (`@agcl/client/vue`)
 
-The package does **not** currently ship framework-specific subpath
-exports. The async-iterator surface (`streamMas`, `chatStream`,
-`tk.chatStream`) plays well with `useEffect` / `onMount` / Svelte
+Vue 3 composables ship as a subpath export. Vue itself is a peer
+dependency — install it in your app, not here.
+
+```ts
+import { AgclClient } from "@agcl/client";
+import { useAgclMas, useAgclChat, useAgclUsage, useAgclTimeseries }
+  from "@agcl/client/vue";
+
+const agcl = new AgclClient({ host: "localhost", port: 9876, authKey });
+
+// recursive-MAS turn — `events` is a reactive array
+const { events, running, answer, run } = useAgclMas(agcl);
+await run({ message: "explain entanglement" });
+
+// chat-path with prefix continuation
+const { prefix, text, send, done } = useAgclChat(agcl, "default");
+await send({ message: "hello" });
+
+// dashboard data — auto-poll
+const { summary, sessions, providers, start, stop } = useAgclUsage(agcl);
+start(5000);     // refresh every 5s
+// stop() on unmount
+
+// bucketed graph data — for chat-tokens vs knowledge-formation graph
+const chat   = useAgclTimeseries(agcl, { kind: "chat",      bucket_sec: 60, lookback_sec: 3600 });
+const know   = useAgclTimeseries(agcl, { kind: "knowledge", bucket_sec: 60, lookback_sec: 3600 });
+await chat.refresh(); await know.refresh();
+// chat.buckets / know.buckets are reactive refs
+```
+
+Source: [`clients/npm/src/vue.ts`](../../clients/npm/src/vue.ts).
+
+---
+
+## React / Svelte / Solid
+
+The package doesn't ship framework-specific subpath exports for these
+yet. The async-iterator surface (`streamMas`, `chatStream`,
+`usageTimeseries`) plays well with `useEffect` / `onMount` / Svelte
 stores — wrap it in your own hook in five lines:
 
 ```tsx

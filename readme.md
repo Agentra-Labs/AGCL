@@ -19,6 +19,9 @@
   <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/k8s-helm%20chart-326CE5?logo=kubernetes&logoColor=white"></a>
   <a href="https://cloud.google.com/run"><img alt="Cloud Run" src="https://img.shields.io/badge/GCP-Cloud%20Run-4285F4?logo=googlecloud&logoColor=white"></a>
   <a href="https://www.npmjs.com/package/@agcl/client"><img alt="npm" src="https://img.shields.io/badge/npm-%40agcl%2Fclient-CB3837?logo=npm&logoColor=white"></a>
+  <a href="https://vuejs.org/"><img alt="Vue 3" src="https://img.shields.io/badge/Vue%203-composables-4FC08D?logo=vuedotjs&logoColor=white"></a>
+  <a href="https://github.com/astral-sh/uv"><img alt="uv" src="https://img.shields.io/badge/uv-supported-DE5FE9"></a>
+  <a href="docs/dashboard.md"><img alt="Dashboard" src="https://img.shields.io/badge/dashboard-%2Fnode%2Fdashboard-blue"></a>
   <a href="https://modelcontextprotocol.io/"><img alt="MCP" src="https://img.shields.io/badge/MCP-stdio%20%7C%20SSE%20%7C%20FastMCP-000000"></a>
   <a href="https://docs.litellm.ai/"><img alt="LiteLLM" src="https://img.shields.io/badge/LiteLLM-gateway-191E29"></a>
   <a href="https://ollama.com/"><img alt="Ollama" src="https://img.shields.io/badge/Ollama-local-000000"></a>
@@ -67,6 +70,8 @@ can pre-warm before you open the terminal.
 | **Orchestrator** (`orchestrate`) | Drive remote AGCL nodes via playbook or one-shot `--target` | [agcl/orchestrator.py](agcl/orchestrator.py) |
 | **Config bundle** (`config export/import`) | Share whole AGCL setups; import-time hints instead of crashes | [agcl/config_bundle.py](agcl/config_bundle.py) |
 | **Plugin system** | Drop a `.py` in `plugins/`, get HTTP routes + CLI commands + tools | [agcl/plugins.py](agcl/plugins.py) |
+| **Usage tracker + quotas** | Per-provider token + cost recording (chat vs knowledge-formation), hard caps, custom OpenAI-compatible providers | [agcl/usage.py](agcl/usage.py) |
+| **Dashboard** (`/node/dashboard`) | Single-file SPA: provider cards, session table, token graphs, quota editor, custom-provider menu | [agcl/dashboard.py](agcl/dashboard.py) |
 | **MCP server** (`mcp` / `mcp --fast`) | stdio + SSE; FastMCP supported when installed | [agcl/integrations/](agcl/integrations/) |
 | **Slack / Discord / OpenAgents / OpenAPI / Multica** | Adapters around the same tool registry | [agcl/integrations/](agcl/integrations/), [plugins/multica.py](plugins/multica.py) |
 | **npm client** (`@agcl/client`) | TypeScript bindings for every node + toolkit route | [clients/npm/](clients/npm/) |
@@ -86,6 +91,7 @@ can pre-warm before you open the terminal.
 > | Pick the right depth for the recursive MAS feature (landing page) | **[docs/recursive.md](docs/recursive.md)** |
 > | Get a terse technical reference for the multi-agent feature | **[docs/recursive/setup.md](docs/recursive/setup.md)** |
 > | Add your own routes / commands / tools via plugins | **[docs/plugins.md](docs/plugins.md)** |
+> | **Set per-provider quotas, register custom APIs, watch token usage** | **[docs/dashboard.md](docs/dashboard.md)** — `/node/dashboard` + `/node/usage/*` |
 > | See what every code file does | **[docs/code-map.md](docs/code-map.md)** |
 >
 > The rest of this readme is a faster technical overview.
@@ -115,25 +121,55 @@ without drawing attention to the mismatch.
 
 ## Install
 
+Pick `pip` or [`uv`](https://github.com/astral-sh/uv) — `uv` resolves +
+installs ~10× faster and gives you isolated venvs by default.
+
+### Option A — pip
+
 ```bash
 git clone https://github.com/Agentra-Labs/AGCL.git
 cd AGCL
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# Optional: one-shot setup of the RecursiveMAS feature
+### Option B — uv (recommended)
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh   # one-time uv install
+
+git clone https://github.com/Agentra-Labs/AGCL.git
+cd AGCL
+uv venv                                            # creates .venv/
+uv pip install -r requirements.txt
+source .venv/bin/activate
+```
+
+`uv pip install` is a drop-in for `pip install`, so all the optional
+extras work the same:
+
+```bash
+uv pip install 'redis[hiredis]' aioboto3 litellm fastmcp discord.py
+```
+
+### Optional: RecursiveMAS one-shot setup
+
+```bash
 python main.py autoconfig                   # creates mas.json, .env, models/hf/
-python main.py autoconfig --install-deps    # also pip install transformers
-python main.py autoconfig --download        # also pre-download the HF models
+python main.py autoconfig --install-deps    # also installs transformers
+python main.py autoconfig --download        # also pre-downloads the HF models
 ```
 
 `autoconfig` is idempotent — safe to run multiple times. It won't
 clobber an existing `mas.json` unless you pass `--force`, and it
 preserves any keys already in your `.env`.
 
-For GPU acceleration of the local model:
+### Optional: GPU acceleration for the local model
 
 ```bash
 CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python --force-reinstall
+# or:
+CMAKE_ARGS="-DLLAMA_CUDA=on" uv pip install llama-cpp-python --force-reinstall
 ```
 
 ---

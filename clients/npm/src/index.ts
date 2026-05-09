@@ -266,6 +266,56 @@ export class AgclClient {
   deleteChatSession(sid: string) {
     return this.request(`/node/sessions/${sid}`, { method: "DELETE" });
   }
+
+  // ────────────────────────────────────────────────────────────────
+  // usage / quotas / custom providers (powers the dashboard)
+  // ────────────────────────────────────────────────────────────────
+
+  usageSummary()      { return this.request("/node/usage/summary"); }
+  usageProviders()    { return this.request("/node/usage/providers"); }
+  usageSessions()     { return this.request("/node/usage/sessions"); }
+  usageSessionDetail(sid: string) {
+    return this.request(`/node/usage/sessions/${sid}`);
+  }
+  usageTimeseries(opts: {
+    session_id?: string; provider?: string; kind?: string;
+    bucket_sec?: number; lookback_sec?: number;
+  } = {}) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(opts)) {
+      if (v != null) q.set(k, String(v));
+    }
+    return this.request("/node/usage/timeseries?" + q.toString());
+  }
+
+  usageQuotas() { return this.request("/node/usage/quotas"); }
+  setUsageQuota(provider: string, body: {
+    max_tokens?: number; max_credit_usd?: number;
+    period?: "lifetime" | "daily" | "monthly"; notes?: string;
+  }) {
+    return this.request(`/node/usage/quota/${provider}`, {
+      method: "PUT", body: JSON.stringify(body),
+    });
+  }
+  deleteUsageQuota(provider: string) {
+    return this.request(`/node/usage/quota/${provider}`, { method: "DELETE" });
+  }
+
+  listCustomProviders() {
+    return this.request("/node/usage/providers/custom");
+  }
+  registerCustomProvider(body: {
+    name: string; base_url: string;
+    api_key_env: string; model: string;
+    kind?: string; notes?: string;
+  }) {
+    return this.request("/node/usage/providers/custom", {
+      method: "POST", body: JSON.stringify(body),
+    });
+  }
+  deleteCustomProvider(name: string) {
+    return this.request(`/node/usage/providers/custom/${name}`, { method: "DELETE" });
+  }
 }
 
 export { ToolkitClient } from "./toolkit.js";

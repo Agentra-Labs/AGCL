@@ -100,6 +100,18 @@ You'll see a lot of scrolling text — that's normal.
 
 If it finishes without a red error, you're good.
 
+> **Faster: use `uv`.** If you'd rather not wait for pip,
+> [`uv`](https://github.com/astral-sh/uv) resolves and installs the
+> same packages roughly 10× faster, and ships its own venv manager:
+>
+>     curl -LsSf https://astral.sh/uv/install.sh | sh
+>     uv venv
+>     uv pip install -r requirements.txt
+>     source .venv/bin/activate
+>
+> Everywhere this guide says `pip install ...`, `uv pip install ...`
+> is interchangeable.
+
 ---
 
 ## Step 4 — Get an API key

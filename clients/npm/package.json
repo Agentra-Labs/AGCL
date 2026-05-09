@@ -1,7 +1,7 @@
 {
   "name": "@agcl/client",
   "version": "0.1.0",
-  "description": "TypeScript client for the AGCL node server (HTTP+SSE, recursive MAS, toolkit gateway).",
+  "description": "TypeScript client for the AGCL node server (HTTP+SSE, recursive MAS, toolkit gateway, usage dashboard).",
   "license": "SEE LICENSE IN ../../LICENSE",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -17,6 +17,11 @@
       "types": "./dist/toolkit.d.ts",
       "import": "./dist/toolkit.js",
       "require": "./dist/toolkit.cjs"
+    },
+    "./vue": {
+      "types": "./dist/vue.d.ts",
+      "import": "./dist/vue.js",
+      "require": "./dist/vue.cjs"
     }
   },
   "files": [
@@ -24,18 +29,25 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/toolkit.ts --format esm,cjs --dts --sourcemap --clean",
-    "dev":   "tsup src/index.ts src/toolkit.ts --format esm,cjs --dts --watch",
+    "build": "tsup src/index.ts src/toolkit.ts src/vue.ts --format esm,cjs --dts --sourcemap --clean",
+    "dev":   "tsup src/index.ts src/toolkit.ts src/vue.ts --format esm,cjs --dts --watch",
     "typecheck": "tsc --noEmit",
     "test":  "node --test test/",
     "prepublishOnly": "npm run build"
   },
   "engines": { "node": ">=18" },
-  "keywords": ["agcl", "agent", "llm", "claude", "openai", "ollama", "litellm", "mas"],
+  "keywords": ["agcl", "agent", "llm", "claude", "openai", "ollama", "litellm", "mas", "vue"],
   "repository": "https://github.com/Agentra-Labs/AGCL",
   "homepage": "https://github.com/Agentra-Labs/AGCL/tree/main/clients/npm",
+  "peerDependencies": {
+    "vue": "^3.4.0"
+  },
+  "peerDependenciesMeta": {
+    "vue": { "optional": true }
+  },
   "devDependencies": {
     "tsup": "^8.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vue": "^3.4.0"
   }
 }
