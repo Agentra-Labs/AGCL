@@ -1,0 +1,231 @@
+# AGCL agent-platform integrations
+
+AGCL ships with adapters for the major agent platforms in the 2025-26
+ecosystem. The strategy follows the recommended order in your
+`Agent Platform Integration Guide`:
+
+1. **Build one MCP server** - covers Claude Desktop / Code, Cursor,
+   OpenAI Agents SDK, LangChain, CrewAI, AutoGen, Copilot Studio,
+   Cloudflare Agents.
+2. **Add a Slack Bolt adapter** - covers Slack AI Apps natively.
+3. **Publish an OpenAPI 3.0 spec** - covers Zapier, n8n (webhook
+   mode), Vertex AI Extensions, Copilot Studio (fallback).
+4. **Wrap as an OpenAgents AgentMod** - covers openagents.org.
+
+Every adapter wraps the same tool registry at
+[agcl/integrations/manifest.py](../agcl/integrations/manifest.py),
+so adding a new tool surfaces it everywhere at once.
+
+---
+
+## Tool registry (single source of truth)
+
+| Tool | Purpose |
+|---|---|
+| `agcl.mas.run`        | Run one turn through the recursive MAS engine |
+| `agcl.mas.status`     | Inspect training-control state of a session |
+| `agcl.mas.pause`      | Pause training mid-run (resumable) |
+| `agcl.mas.resume`     | Resume a paused session |
+| `agcl.mas.halt`       | Halt training cleanly |
+| `agcl.mas.latent`     | Snapshot the latest loop latent (truncated) |
+| `agcl.mini.test`      | Generate from the background mini-model |
+| `agcl.mini.status`    | Mini-trainer status |
+| `agcl.mini.start` / `stop` | Toggle the background trainer |
+| `agcl.topics.list`    | List saved trained-topic checkpoints |
+| `agcl.plugins.list`   | List discovered AGCL plugins |
+
+Plugins extend the registry at runtime via
+`agcl.integrations.manifest.register_tool(name, description, schema, handler)`.
+
+---
+
+## 1. MCP server (the universal one)
+
+**Install (only when you actually run it):**
+
+```bash
+pip install mcp
+```
+
+**stdio transport (Claude Desktop, Cursor, Claude Code):**
+
+```bash
+python main.py mcp
+```
+
+In `~/.config/claude/claude_desktop_config.json` (or your client's
+equivalent):
+
+```json
+{
+  "mcpServers": {
+    "agcl": {
+      "command": "python",
+      "args":    ["/path/to/AGCL/main.py", "mcp"]
+    }
+  }
+}
+```
+
+**HTTP SSE transport (any MCP HTTP client, Copilot Studio, etc.):**
+
+```bash
+python main.py mcp --transport sse --host 127.0.0.1 --port 8765
+```
+
+**Static manifest dump (no SDK needed - useful for inspection / static
+distribution):**
+
+```bash
+python main.py mcp --transport manifest > agcl.mcp.json
+```
+
+The manifest format follows the MCP tool spec:
+
+```json
+{
+  "name": "agcl",
+  "version": "1",
+  "tools": [
+    {"name": "agcl.mas.run", "description": "...",
+     "inputSchema": {"type": "object", "properties": {...}, "required": [...]}}
+  ]
+}
+```
+
+That single artifact is what Claude / Cursor / OpenAI Agents SDK /
+LangChain / CrewAI / AutoGen / Copilot Studio all consume.
+
+---
+
+## 2. Slack AI Apps (Bolt for Python)
+
+**Install:**
+
+```bash
+pip install slack-bolt              # HTTP mode
+pip install slack-bolt[socket-mode] # Socket Mode (better for dev)
+```
+
+**Slack app config (do once in api.slack.com/apps):**
+
+| Required | Value |
+|---|---|
+| Bot Token Scopes  | `assistant:write`, `chat:write`, `channels:history`, `im:history`, `im:read` |
+| Event subscriptions | `assistant_thread_started`, `assistant_thread_context_changed`, `message.im` |
+| Features | Enable "Agents & AI Apps" |
+
+**Run (Socket Mode, recommended for dev):**
+
+```bash
+export SLACK_BOT_TOKEN=xoxb-...
+export SLACK_APP_TOKEN=xapp-...
+python main.py slack
+```
+
+**Run (HTTP mode, for production):**
+
+```bash
+export SLACK_BOT_TOKEN=xoxb-...
+export SLACK_SIGNING_SECRET=...
+python main.py slack --http --port 3000
+```
+
+The adapter routes Slack DMs into `agcl.mas.run` with one AGCL session
+per Slack user (`session_id="slack-<user_id>"`), so each user keeps an
+independent recursive-MAS context. The first message in any thread
+triggers a `"AGCL ready..."` greeting via `assistant_thread_started`.
+
+---
+
+## 3. OpenAgents (openagents.org)
+
+**Install:**
+
+```bash
+pip install openagents[sdk]
+```
+
+**Run:**
+
+```bash
+python main.py agentmod                          # register, don't join
+python main.py agentmod --workspace ws-abc123    # join a workspace
+```
+
+The mod's `on_message` routes free-text into `agcl.mas.run`. The
+`on_task` hook accepts `{"tool": "agcl.mini.test", "args": {...}}`
+shapes for explicit tool calls, falling back to a list of available
+tool names if an unknown id is requested.
+
+To use the AGCL mod from your own OpenAgents network code:
+
+```python
+from agcl.integrations.openagents import AGCLMod
+mod = AGCLMod()
+mod.join("ws-abc123")
+```
+
+---
+
+## 4. OpenAPI 3.0 (Zapier / Copilot Studio / Vertex AI / n8n)
+
+The node server already exposes a complete OpenAPI document at
+`/openapi.json`. For platforms that want a static spec (Zapier
+Developer Platform, Copilot Studio's "Add a plugin", Vertex AI
+Extensions), dump it once:
+
+```bash
+python main.py openapi --out agcl.openapi.json
+```
+
+Upload `agcl.openapi.json` to whichever portal asks for one. The
+document is a strict subset of OpenAPI 3.0 generated by FastAPI so it
+imports cleanly into all four target platforms.
+
+---
+
+## Decision matrix (mapping the guide to AGCL)
+
+| Platform            | AGCL adapter                         | One-liner |
+|---|---|---|
+| Claude Desktop      | MCP stdio                            | `python main.py mcp` |
+| Claude Code         | MCP stdio                            | same |
+| Cursor              | MCP stdio                            | same |
+| OpenAI Agents SDK   | MCP stdio (or HTTP SSE)              | `python main.py mcp [--transport sse]` |
+| LangChain/LangGraph | MCP via `langchain-mcp-adapters`     | same |
+| CrewAI              | MCP via `crewai-tools.MCPTool`       | same |
+| AutoGen             | MCP via `autogen-ext[mcp]`           | same |
+| Copilot Studio      | MCP HTTP SSE *or* OpenAPI            | `python main.py mcp --transport sse` |
+| Cloudflare Agents   | MCP                                  | same |
+| Slack AI Apps       | Bolt SDK adapter                     | `python main.py slack` |
+| OpenAgents          | AgentMod adapter                     | `python main.py agentmod` |
+| Zapier              | OpenAPI                              | `python main.py openapi --out agcl.openapi.json` |
+| n8n (webhook)       | OpenAPI                              | same |
+| Vertex AI Ext.      | OpenAPI                              | same |
+| Vercel AI SDK       | MCP                                  | `python main.py mcp` |
+
+---
+
+## Adding a new tool to all platforms at once
+
+```python
+# in any plugin under plugins/
+from agcl.integrations.manifest import register_tool
+
+def my_handler(args):
+    return {"echo": args.get("text", "")}
+
+def register(ctx):
+    register_tool(
+        name="my.echo",
+        description="Echo input text back",
+        schema={"type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"]},
+        handler=my_handler,
+    )
+```
+
+Restart any adapter and `my.echo` shows up in MCP, OpenAgents,
+Slack-direct-call (via the manifest dump), and the OpenAPI spec.

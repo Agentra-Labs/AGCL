@@ -27,6 +27,7 @@
 > | Set up the recursive multi-agent feature with real models | **[docs/advanced_guide.md](docs/advanced_guide.md)** — picking models step by step |
 > | Understand what auto-training is doing under the hood | **[docs/training.md](docs/training.md)** — the `[stage A]` / `[stage B]` lines explained |
 > | **Integrate this PC into a GUI / web frontend** | **[docs/integration.md](docs/integration.md)** — node API, auth, SSE events, every editable config |
+> | **Plug AGCL into MCP / Slack / OpenAgents / Zapier / Copilot Studio** | **[docs/integrations.md](docs/integrations.md)** — agent-platform adapters |
 > | Get a terse technical reference for the multi-agent feature | **[docs/recursive_mas_setup.md](docs/recursive_mas_setup.md)** |
 > | See what every code file does | **[docs/main.md](docs/main.md)** |
 >

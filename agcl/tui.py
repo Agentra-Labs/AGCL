@@ -50,14 +50,55 @@ BASE_COMMANDS = [
 ]
 
 
+# --- theme: pure black/white, inverted by terminal background -------
+# Dark terminal -> white text on black ; light terminal -> black on
+# white. No accent colors anywhere; the CLI looks the same in either
+# mode, just inverted. Override with `AGCL_THEME=light|dark`.
+
+def _detect_theme() -> str:
+    forced = os.environ.get("AGCL_THEME", "").strip().lower()
+    if forced in ("light", "dark"):
+        return forced
+    # COLORFGBG ("fg;bg") is set by some terminals. bg index in
+    # {0,1,2,3,4,5,6,8} -> dark base; {7,9,10,11,12,13,14,15} -> light.
+    cfb = os.environ.get("COLORFGBG", "")
+    if ";" in cfb:
+        try:
+            bg = int(cfb.rsplit(";", 1)[1])
+            return "light" if bg in (7, 9, 10, 11, 12, 13, 14, 15) else "dark"
+        except ValueError:
+            pass
+    return "dark"   # safest default for terminals
+
+
+THEME = _detect_theme()
+_FG = "#ffffff" if THEME == "dark" else "#000000"
+_BG = "#000000" if THEME == "dark" else "#ffffff"
+
 _STYLE = Style.from_dict({
-    "menu":   "bg:#000000 #ffffff",
-    "header": "bold",
-    "lint":   "italic #999999",
-    "warn":   "bold #cc7700",
-    "err":    "bold #cc0000",
-    "ok":     "#009900",
+    # selectable menu rows: invert fg/bg vs the terminal so a row visibly
+    # highlights without using any accent color.
+    "dialog":             f"bg:{_BG} {_FG}",
+    "dialog frame.label": f"bg:{_BG} {_FG} bold",
+    "dialog.body":        f"bg:{_BG} {_FG}",
+    "radio":              f"bg:{_BG} {_FG}",
+    "radio-selected":     f"bg:{_FG} {_BG} bold",
+    "radio-checked":      f"bg:{_BG} {_FG} bold",
+    "button":             f"bg:{_BG} {_FG}",
+    "button.focused":     f"bg:{_FG} {_BG} bold",
 })
+
+
+def _print_hint(text: str) -> None:
+    """Render a single dim inline hint, Claude-Code-style. Only fires on
+    text the linter flagged - not on tool output, not on every input.
+    Uses ANSI dim (\\033[2m) which both light and dark terminals render
+    as a faded version of the foreground color, so it stays
+    monochromatic."""
+    if not text:
+        return
+    sys.stdout.write(f"\033[2m  {text}\033[0m\n")
+    sys.stdout.flush()
 
 
 def _print_banner() -> None:
@@ -136,9 +177,10 @@ def _run_chat_mode(session: PromptSession, linter: Linter) -> None:
             return
         if not line:
             continue
-        result = linter(line)
-        if not result.ok:
-            print("  " + result.render())
+        # Claude-Code-style: only flag genuine slash-command typos with
+        # a single dim hint line. Plain prose passes through silently.
+        if line.startswith("/"):
+            _print_hint(linter(line).hint())
         if line == "/quit":
             sys.exit(0)
         if line == "/back":
@@ -189,11 +231,11 @@ def _run_recursive_mode(session: PromptSession, linter: Linter) -> None:
             return
         if not line:
             continue
-        result = linter(line)
-        if not result.ok:
-            print("  " + result.render())
-            # Don't proceed with a malformed slash command.
-            if line.startswith("/"):
+        if line.startswith("/"):
+            result = linter(line)
+            _print_hint(result.hint())
+            if not result.ok:
+                # Don't proceed with a malformed slash command.
                 continue
 
         if line == "/quit":

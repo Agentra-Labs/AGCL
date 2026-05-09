@@ -38,6 +38,16 @@ class LintResult:
             bits.append(f"did you mean: {self.suggestion} ?")
         return "  ".join(bits)
 
+    def hint(self) -> str:
+        """Claude-Code-style inline hint: one dim line, no severity tag.
+        Returns "" when there's nothing useful to say so callers can use
+        `if hint: print(hint)` without checking ok separately."""
+        if self.ok:
+            return ""
+        if self.suggestion:
+            return f"did you mean {self.suggestion}?"
+        return self.message
+
 
 def _levenshtein(a: str, b: str) -> int:
     if a == b:

@@ -8,6 +8,11 @@ Run with:
   python main.py serve --port 8000       # run the FastAPI server in the foreground
   python main.py node --port 9876        # expose this PC to a GUI client
   python main.py recursive run           # recursive multi-agent reasoning
+  python main.py mini status             # background mini-model trainer
+  python main.py mcp                     # MCP server (Claude/Cursor/OpenAI/...)
+  python main.py slack                   # Slack Bolt adapter
+  python main.py agentmod                # OpenAgents AgentMod
+  python main.py openapi                 # dump OpenAPI 3.0 spec
   uvicorn main:app --reload --port 8000  # equivalent to `serve`
 
 Endpoints:
@@ -497,6 +502,34 @@ def main():
     np.add_argument("--log-level", default="warning",
         help="uvicorn log level (info|warning|error)")
 
+    # `mcp` runs an MCP server speaking JSON-RPC over stdio (default) or HTTP SSE
+    mcp_p = sub.add_parser("mcp",
+        help="run an MCP server (Model Context Protocol) for AGCL")
+    mcp_p.add_argument("--transport", default="stdio",
+        choices=["stdio", "sse", "manifest"],
+        help="stdio (default), sse (HTTP), or manifest (dump JSON and exit)")
+    mcp_p.add_argument("--host", default="127.0.0.1")
+    mcp_p.add_argument("--port", default=8765, type=int)
+
+    # `slack` runs the Slack Bolt adapter
+    sl_p = sub.add_parser("slack",
+        help="run the Slack Bolt adapter (Slack AI Apps)")
+    sl_p.add_argument("--http", action="store_true",
+        help="run in HTTP mode (default: Socket Mode if SLACK_APP_TOKEN set)")
+    sl_p.add_argument("--port", default=3000, type=int)
+
+    # `agentmod` runs the OpenAgents AgentMod adapter
+    oa_p = sub.add_parser("agentmod",
+        help="run the OpenAgents AgentMod adapter")
+    oa_p.add_argument("--workspace", default=None,
+        help="OpenAgents workspace id to join (omit to just register the mod)")
+
+    # `openapi` dumps the FastAPI-generated OpenAPI spec
+    oapi_p = sub.add_parser("openapi",
+        help="dump AGCL's OpenAPI 3.0 spec (for Zapier / Copilot Studio / Vertex AI)")
+    oapi_p.add_argument("--out", default=None,
+        help="write to a file instead of stdout")
+
     # `mini` controls the optional background mini-model trainer
     mp = sub.add_parser("mini", help="background mini-model trainer (toggleable)")
     mp.add_argument("action", choices=[
@@ -554,6 +587,22 @@ def main():
         _run_cli(args)
     elif args.cmd == "mini":
         _run_mini(args)
+    elif args.cmd == "mcp":
+        from agcl.integrations import mcp_server as M
+        if args.transport == "manifest":
+            sys.exit(M.dump_manifest())
+        if args.transport == "sse":
+            sys.exit(M.run_sse(host=args.host, port=args.port))
+        sys.exit(M.run_stdio())
+    elif args.cmd == "slack":
+        from agcl.integrations import slack_bolt as S
+        sys.exit(S.run(http=args.http, port=args.port))
+    elif args.cmd == "agentmod":
+        from agcl.integrations import openagents as O
+        sys.exit(O.run(workspace=args.workspace))
+    elif args.cmd == "openapi":
+        from agcl.integrations import openapi_export as OA
+        sys.exit(OA.export(out=args.out))
     else:
         # default: persistent TUI shell. Server is opt-in via "serve"/"node"
         # subcommands or the in-shell menu.
