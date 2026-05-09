@@ -1,6 +1,6 @@
 # Advanced guide — running RecursiveMAS with real HuggingFace models
 
-This guide picks up where [`guide.md`](guide.md) leaves off. It walks
+This guide picks up where [`guide.md`](../guide.md) leaves off. It walks
 through standing up a real recursive multi-agent system with
 HuggingFace models, mixing them with GGUF models, and tuning the loop.
 
@@ -14,15 +14,15 @@ several GB.
 
 > **Where you are:** picking models and running the MAS by hand.
 > Other docs:
-> - **[guide.md](guide.md)** — first-time setup
-> - **[configuration.md](configuration.md)** — every config knob
+> - **[guide.md](../guide.md)** — first-time setup
+> - **[configuration.md](../configuration.md)** — every config knob
 >   explained simply (great if you skipped that)
 > - **[training.md](training.md)** — what auto-training does, step
 >   by step
-> - **[integration.md](integration.md)** — node API for GUI integration
-> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+> - **[gui.md](../gui.md)** — node API for GUI integration
+> - **[recursive/setup.md](setup.md)** — terse
 >   reference
-> - **[main.md](main.md)** — per-file code reference
+> - **[main.md](../code-map.md)** — per-file code reference
 
 ---
 
@@ -75,7 +75,7 @@ roles, dtypes, and (optionally) downloading every HF model fully into
 `models/hf_local/` so future runs never hit the HuggingFace Hub. It
 writes `mas.json` and patches `.env` with the right `MAS_*` keys at
 the end. Full walkthrough is in
-**[configuration.md](configuration.md#path-2-interactive-wizard---config)**.
+**[configuration.md](../configuration.md#path-2-interactive-wizard---config)**.
 
 If you'd rather understand each piece (or want very fine-grained
 control), keep reading from step 1 — `autoconfig` and `--config` are
@@ -518,13 +518,13 @@ use `mas.generate_text(..., do_sample=False)`).
 
 ## Where to go next
 
-- **[configuration.md](configuration.md)** — every config knob,
+- **[configuration.md](../configuration.md)** — every config knob,
   scenarios, on-disk layout
 - **[training.md](training.md)** — what happens when you see those
   `[stage A]` / `[stage B]` lines
-- **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+- **[recursive/setup.md](setup.md)** — terse
   technical reference
-- **[main.md](main.md)** — per-file code reference
+- **[main.md](../code-map.md)** — per-file code reference
 - The actual code (it's small and readable): `agcl/recursive/`
 - The 21 validation tests double as runnable examples:
   `agcl/recursive/validate.py`

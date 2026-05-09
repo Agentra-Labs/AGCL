@@ -9,7 +9,7 @@ AGCL (Agentic CLI). Two things live here:
 2. **The plugin contract** - how to drop a `.py` file in `plugins/`
    that registers your own HTTP routes and TUI slash commands.
 
-Read this alongside [integration.md](integration.md), which covers the
+Read this alongside [gui.md](gui.md), which covers the
 auth flow, CORS posture, and the existing endpoint surface.
 
 ---
@@ -267,7 +267,7 @@ registered slash commands.
 ## 4. SSE event additions
 
 In addition to the events documented in
-[integration.md](integration.md#event-reference), the streaming
+[gui.md](gui.md#event-reference), the streaming
 endpoint may emit:
 
 | `event` | Fields | When |

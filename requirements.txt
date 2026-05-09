@@ -8,4 +8,14 @@ tiktoken>=0.7.0        # optional but gives real token counts
 torch>=2.0             # required by agcl.recursive (InnerLink/OuterLink/RecursiveMAS)
 prompt_toolkit>=3.0.43 # interactive TUI shell (arrow-key menus, key bindings)
 Pillow>=10.0.0         # icon.png ASCII rendering at CLI startup
-# transformers>=4.40   # optional — only needed if you call RecursiveAgent.from_pretrained
+
+# ---- optional toolkit extras (install only what you actually use) ----
+# pip install -r requirements.txt redis aioboto3 litellm discord.py aiortc
+# transformers>=4.40   # only needed if you call RecursiveAgent.from_pretrained
+# redis[hiredis]>=5.0  # agcl.toolkit.redis_state (distributed sessions)
+# aioboto3>=13.0       # agcl.toolkit.s3_store (R2/MinIO/B2/AWS checkpoints)
+# litellm>=1.40        # agcl.toolkit.litellm_gw SDK path (proxy-mode works without)
+# discord.py>=2.3      # agcl.toolkit.discord (REST helpers work without)
+# aiortc>=1.6          # agcl.toolkit.webrtc (signaling-only works without)
+# slack-bolt>=1.18     # agcl.integrations.slack_bolt
+# mcp>=1.0             # agcl.integrations.mcp_server

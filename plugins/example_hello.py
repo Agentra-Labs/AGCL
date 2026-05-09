@@ -2,7 +2,7 @@
 Example AGCL plugin.
 
 Drops a /node/hello route and a `hello` CLI command into the running
-node + TUI. Use as a template for your own plugins. See docs/endpoint.md
+node + TUI. Use as a template for your own plugins. See docs/plugins.md
 for the full plugin contract.
 """
 

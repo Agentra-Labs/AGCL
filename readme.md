@@ -2,7 +2,11 @@
   <img src="icon.png" alt="AGCL - Agentic CLI" width="220" />
 </p>
 
-<h1 align="center">AGCL - Agentic CLI</h1>
+<h1 align="center">AGCL — Agentic CLI</h1>
+
+<p align="center">
+  <em>Local-first agent runtime + recursive cognition layer + orchestrator for self-hosted endpoints.</em>
+</p>
 
 <p align="center">
   <a href="https://github.com/Agentra-Labs/AGCL"><img alt="GitHub" src="https://img.shields.io/badge/github-Agentra--Labs%2FAGCL-181717?logo=github&logoColor=white"></a>
@@ -11,12 +15,61 @@
   <a href="https://fastapi.tiangolo.com/"><img alt="FastAPI" src="https://img.shields.io/badge/fastapi-0.111%2B-009688?logo=fastapi&logoColor=white"></a>
   <a href="https://huggingface.co/"><img alt="Hugging Face" src="https://img.shields.io/badge/%F0%9F%A4%97-transformers-FFD21E"></a>
   <a href="https://github.com/ggerganov/llama.cpp"><img alt="llama.cpp" src="https://img.shields.io/badge/llama.cpp-gguf-000000"></a>
+  <a href="https://www.docker.com/"><img alt="Docker" src="https://img.shields.io/badge/docker-supported-2496ED?logo=docker&logoColor=white"></a>
+  <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/k8s-helm%20chart-326CE5?logo=kubernetes&logoColor=white"></a>
+  <a href="https://cloud.google.com/run"><img alt="Cloud Run" src="https://img.shields.io/badge/GCP-Cloud%20Run-4285F4?logo=googlecloud&logoColor=white"></a>
+  <a href="https://www.npmjs.com/package/@agcl/client"><img alt="npm" src="https://img.shields.io/badge/npm-%40agcl%2Fclient-CB3837?logo=npm&logoColor=white"></a>
+  <a href="https://modelcontextprotocol.io/"><img alt="MCP" src="https://img.shields.io/badge/MCP-stdio%20%7C%20SSE%20%7C%20FastMCP-000000"></a>
+  <a href="https://docs.litellm.ai/"><img alt="LiteLLM" src="https://img.shields.io/badge/LiteLLM-gateway-191E29"></a>
+  <a href="https://ollama.com/"><img alt="Ollama" src="https://img.shields.io/badge/Ollama-local-000000"></a>
+  <a href="https://docs.vllm.ai/"><img alt="vLLM" src="https://img.shields.io/badge/vLLM-server-FF6F00"></a>
+  <a href="https://redis.io/"><img alt="Redis" src="https://img.shields.io/badge/Redis%20%2F%20Valkey-cluster-DC382D?logo=redis&logoColor=white"></a>
+  <a href="https://aws.amazon.com/s3/"><img alt="S3-compatible" src="https://img.shields.io/badge/S3%20%7C%20R2%20%7C%20MinIO-checkpoints-569A31"></a>
   <a href="https://github.com/Agentra-Labs/AGCL/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Agentra-Labs/AGCL?style=flat&logo=github"></a>
   <a href="https://github.com/Agentra-Labs/AGCL/issues"><img alt="Issues" src="https://img.shields.io/github/issues/Agentra-Labs/AGCL?logo=github"></a>
   <a href="https://github.com/Agentra-Labs/AGCL/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-see%20repo-blue"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey">
-  <img alt="CLI" src="https://img.shields.io/badge/interface-TUI%20%7C%20HTTP%2BSSE-purple">
+  <img alt="CLI" src="https://img.shields.io/badge/interface-TUI%20%7C%20HTTP%2BSSE%20%7C%20JSONL%20%7C%20MCP-purple">
 </p>
+
+---
+
+AGCL does three things:
+
+1. **Local-first chat agent.** A small llama.cpp model starts the response in
+   ~50–300 ms; the cloud model (Claude / OpenAI / any LiteLLM-routed provider)
+   continues from the same open assistant turn instead of restarting it.
+2. **Recursive multi-agent runtime.** Two small projection MLPs sit between
+   HuggingFace agents; the loop unrolls *n* rounds and only the final agent
+   decodes text. Trains itself online from a one-shot cloud teacher answer
+   and persists the trained links per topic.
+3. **Local orchestrator.** `agcl run --output jsonl` plus
+   `agcl orchestrate <playbook>` lets external tools (Multica, Cloud Run jobs,
+   GitHub Actions, plain bash) drive AGCL or fan tasks across multiple
+   self-hosted AGCL nodes — same wire format everywhere.
+
+Idle behavior: sessions flush to disk, the local model unloads, everything
+reloads on the next message. Over time AGCL learns which hours you use it and
+can pre-warm before you open the terminal.
+
+---
+
+## What's in the box
+
+| Component | What it does | Where it lives |
+|---|---|---|
+| **TUI shell** (default `python main.py`) | Long-running terminal app, arrow-key menus, slash commands | [agcl/tui.py](agcl/tui.py) |
+| **Node server** (`python main.py node`) | HTTP + SSE API with bearer auth, full `/node/*` surface | [agcl/node.py](agcl/node.py) |
+| **Recursive MAS** (`recursive run`) | InnerLink/OuterLink projections, online cloud-teacher training | [agcl/recursive/](agcl/recursive/) |
+| **Mini-trainer** (`mini ...`) | Optional pluggable transformer/MLP that trains from captured latents | [agcl/mini/](agcl/mini/) |
+| **Toolkit** (`toolkit ...`) | LiteLLM / Ollama / vLLM / TGI / Redis / S3 / Cloudflare / WebRTC / Docker / K8s / GCP adapters | [agcl/toolkit/](agcl/toolkit/) |
+| **Headless runner** (`run --output jsonl`) | Multica / Cloud Run / Actions contract — emits the unified event taxonomy | [agcl/runner.py](agcl/runner.py) |
+| **Orchestrator** (`orchestrate`) | Drive remote AGCL nodes via playbook or one-shot `--target` | [agcl/orchestrator.py](agcl/orchestrator.py) |
+| **Config bundle** (`config export/import`) | Share whole AGCL setups; import-time hints instead of crashes | [agcl/config_bundle.py](agcl/config_bundle.py) |
+| **Plugin system** | Drop a `.py` in `plugins/`, get HTTP routes + CLI commands + tools | [agcl/plugins.py](agcl/plugins.py) |
+| **MCP server** (`mcp` / `mcp --fast`) | stdio + SSE; FastMCP supported when installed | [agcl/integrations/](agcl/integrations/) |
+| **Slack / Discord / OpenAgents / OpenAPI / Multica** | Adapters around the same tool registry | [agcl/integrations/](agcl/integrations/), [plugins/multica.py](plugins/multica.py) |
+| **npm client** (`@agcl/client`) | TypeScript bindings for every node + toolkit route | [clients/npm/](clients/npm/) |
 
 > **Documentation map**
 >
@@ -24,24 +77,18 @@
 > |---|---|
 > | Set up the project for the first time (no Python experience needed) | **[docs/guide.md](docs/guide.md)** — 15-min beginner walkthrough |
 > | Understand every config knob in plain English | **[docs/configuration.md](docs/configuration.md)** — friendly reference |
-> | Set up the recursive multi-agent feature with real models | **[docs/advanced_guide.md](docs/advanced_guide.md)** — picking models step by step |
-> | Understand what auto-training is doing under the hood | **[docs/training.md](docs/training.md)** — the `[stage A]` / `[stage B]` lines explained |
-> | **Integrate this PC into a GUI / web frontend** | **[docs/integration.md](docs/integration.md)** — node API, auth, SSE events, every editable config |
-> | **Plug AGCL into MCP / Slack / OpenAgents / Zapier / Copilot Studio** | **[docs/integrations.md](docs/integrations.md)** — agent-platform adapters |
-> | Get a terse technical reference for the multi-agent feature | **[docs/recursive_mas_setup.md](docs/recursive_mas_setup.md)** |
-> | See what every code file does | **[docs/main.md](docs/main.md)** |
+> | Set up the recursive multi-agent feature with real models | **[docs/recursive/advanced.md](docs/recursive/advanced.md)** — picking models step by step |
+> | Understand what auto-training is doing under the hood | **[docs/recursive/training.md](docs/recursive/training.md)** — the `[stage A]` / `[stage B]` lines explained |
+> | **Integrate this PC into a GUI / web frontend** | **[docs/gui.md](docs/gui.md)** — landing page; node API, auth, SSE events, config map, TS client |
+> | **Plug AGCL into MCP / Slack / Discord / OpenAgents / Zapier / Multica** | **[docs/integrations.md](docs/integrations.md)** — agent-platform adapters |
+> | **Run AGCL in Docker, Kubernetes, GCP Cloud Run, or behind a LiteLLM gateway** | **[docs/integrations/cloud.md](docs/integrations/cloud.md)** — Docker, K8s, GCP, LiteLLM, Ollama, vLLM, Redis, S3, Cloudflare |
+> | **Use AGCL from JavaScript / TypeScript** | **[docs/integrations/npm.md](docs/integrations/npm.md)** — `@agcl/client` package |
+> | Pick the right depth for the recursive MAS feature (landing page) | **[docs/recursive.md](docs/recursive.md)** |
+> | Get a terse technical reference for the multi-agent feature | **[docs/recursive/setup.md](docs/recursive/setup.md)** |
+> | Add your own routes / commands / tools via plugins | **[docs/plugins.md](docs/plugins.md)** |
+> | See what every code file does | **[docs/code-map.md](docs/code-map.md)** |
 >
 > The rest of this readme is a faster technical overview.
-
-A CLI-level daily agent that makes cloud AI feel instant by firing a local nano
-model's first few words immediately, then letting Claude or OpenAI finish the
-response. The local model runs via llama.cpp. The cloud model continues from
-exactly where the local model left off — it never restarts.
-
-When you're not using it, it goes quiet: sessions flush to disk, the local model
-unloads from RAM, and everything reloads transparently on your next message.
-Over time it learns which hours you use it and can pre-warm itself before you
-even open the terminal.
 
 ---
 
@@ -299,7 +346,7 @@ recursive/      recursive multi-agent reasoning in latent space
 main.py         FastAPI app + routes + idle watcher + SSE streaming + CLI client
 ```
 
-Full function-level documentation for each file is in `docs/main.md`.
+Full function-level documentation for each file is in `docs/code-map.md`.
 
 ---
 
@@ -443,17 +490,93 @@ Deeper docs:
 
 - [`docs/configuration.md`](docs/configuration.md) — every config
   knob explained in plain English
-- [`docs/training.md`](docs/training.md) — exactly what auto-training
+- [`docs/recursive/training.md`](docs/recursive/training.md) — exactly what auto-training
   does on each turn (the `[stage A]` / `[stage B]` lines you see in
   the terminal)
-- [`docs/integration.md`](docs/integration.md) — node-server API for
+- [`docs/gui.md`](docs/gui.md) — node-server API for
   GUI integration (bearer auth, CORS, full `/node/*` reference, SSE
   events, every editable config mapped)
-- [`docs/advanced_guide.md`](docs/advanced_guide.md) — picking models,
+- [`docs/recursive/advanced.md`](docs/recursive/advanced.md) — picking models,
   mixing HF + GGUF, manual training, all 4 patterns
-- [`docs/recursive_mas_setup.md`](docs/recursive_mas_setup.md) — terse
+- [`docs/recursive/setup.md`](docs/recursive/setup.md) — terse
   technical reference
-- [`docs/main.md`](docs/main.md) — per-file code reference
+- [`docs/code-map.md`](docs/code-map.md) — per-file code reference
+
+---
+
+## Headless / orchestrated use
+
+AGCL is also a CLI you can drive from any other tool. The same engine
+that powers the TUI is reachable as a **structured task runner** and as
+a **fan-out orchestrator** for remote AGCL nodes.
+
+### Run one task, get JSONL events
+
+```bash
+python main.py run \
+  --task "summarize the latest commit" \
+  --workdir /tmp/agcl-job-42 \
+  --output jsonl \
+  --session-id job-42
+```
+
+Each line on stdout is one of: `status`, `thinking`, `text`,
+`tool_call`, `tool_result`, `answer`, `error`, `done`. This matches the
+[Multica Backend.Execute event taxonomy](docs/integrations/multica.md),
+so wiring AGCL into Multica is one Go file + one entry in the daemon
+probe list.
+
+### Drive remote AGCL nodes
+
+```bash
+# one-shot
+python main.py orchestrate \
+  --target http://lab.local:9876 \
+  --auth-key $LAB_KEY \
+  --task "rerun retrieval against the new index"
+
+# playbook (json or yaml)
+python main.py orchestrate playbook.json
+```
+
+A playbook is a small JSON / YAML document with `targets` and `tasks`;
+see [agcl/orchestrator.py](agcl/orchestrator.py) for the schema.
+
+### Share a config
+
+```bash
+# on the original machine
+python main.py config export agcl-config.json
+
+# on a teammate's machine
+python main.py config hint agcl-config.json   # dry run; lists missing pieces
+python main.py config import agcl-config.json --apply
+```
+
+Import never crashes. If a model file is missing, an HF id isn't in the
+cache, an env var isn't set, or an optional pip extra isn't installed,
+the validator prints the exact `pip install` / `huggingface-cli download`
+command to run.
+
+### Toolkit (gateway, infra, deployment artifacts)
+
+```bash
+python main.py toolkit discover                # what's wired + importable
+python main.py toolkit ping ollama             # reachability
+python main.py toolkit chat "hello" --stream   # via configured gateway
+python main.py toolkit emit-docker --gpu       # Dockerfile + Compose stack
+python main.py toolkit emit-k8s                # Helm chart + manifests
+python main.py toolkit emit-gcp                # Cloud Run + Cloud Build
+```
+
+### MCP (FastMCP supported)
+
+```bash
+python main.py mcp                       # stdio (default; pip install mcp)
+python main.py mcp --fast                # FastMCP (pip install fastmcp)
+python main.py mcp --transport sse --port 8765
+python main.py mcp --transport manifest  # dump the JSON tool spec
+```
 
 ---
 
@@ -471,4 +594,4 @@ exposes the full editable config + the recursive MAS runtime + topic
 index over HTTP, and prints a one-time auth key. Paste that key into
 your GUI to authorize. Full integration contract (every endpoint,
 SSE event format, editable-config table) is in
-[`docs/integration.md`](docs/integration.md).
+[`docs/gui.md`](docs/gui.md).

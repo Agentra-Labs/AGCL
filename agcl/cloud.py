@@ -55,7 +55,22 @@ def _build_messages(history, prefix, recovery_mode):
     return msgs
 
 
-#  streaming generators 
+#  streaming generators
+
+async def _stream_toolkit_gateway(msgs):
+    """
+    Route through agcl.toolkit when AGCL_LLM_BASE_URL (LiteLLM proxy),
+    VLLM_HOST, or OLLAMA_HOST is set. The gateway client picks the
+    right backend automatically; we just need to pass messages.
+    """
+    from agcl.toolkit.registry import get_chat_client
+    client = get_chat_client()
+    if client is None:
+        return  # caller will fall back to provider-direct path
+    model = getattr(client, "default_model", None) or "smart"
+    async for chunk in client.stream(msgs, model=model):
+        yield chunk
+
 
 async def _stream_openai(msgs):
     import openai
@@ -99,9 +114,18 @@ async def stream_continuation(history, prefix, provider=None, recovery_mode="nat
     provider = provider or DEFAULT_CLOUD
     msgs = _build_messages(history, prefix, recovery_mode)
 
+    # If a toolkit gateway is configured (LiteLLM proxy, vLLM, or Ollama),
+    # route through it — it handles fallback / retry / spend tracking.
+    # Falls through to the provider-direct path if no gateway env is set.
+    import os as _os
+    use_gateway = any(_os.getenv(k) for k in
+                       ("AGCL_LLM_BASE_URL", "VLLM_HOST", "OLLAMA_HOST"))
+
     t0 = time.time()
     try:
-        if provider == "openai":
+        if use_gateway:
+            gen = _stream_toolkit_gateway(msgs)
+        elif provider == "openai":
             gen = _stream_openai(msgs)
         else:
             gen = _stream_claude(msgs, prefix)

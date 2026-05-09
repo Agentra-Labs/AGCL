@@ -510,6 +510,8 @@ def main():
         help="stdio (default), sse (HTTP), or manifest (dump JSON and exit)")
     mcp_p.add_argument("--host", default="127.0.0.1")
     mcp_p.add_argument("--port", default=8765, type=int)
+    mcp_p.add_argument("--fast", action="store_true",
+        help="use FastMCP (pip install fastmcp) instead of the plain mcp SDK")
 
     # `slack` runs the Slack Bolt adapter
     sl_p = sub.add_parser("slack",
@@ -529,6 +531,76 @@ def main():
         help="dump AGCL's OpenAPI 3.0 spec (for Zapier / Copilot Studio / Vertex AI)")
     oapi_p.add_argument("--out", default=None,
         help="write to a file instead of stdout")
+
+    # `run` is the headless task runner — what Multica / Cloud Run / GitHub
+    # Actions / shell scripts call to drive AGCL as an orchestratable CLI.
+    run_p = sub.add_parser("run",
+        help="execute one task with structured output (jsonl|sse|text)")
+    run_p.add_argument("--task", required=True,
+        help="task description (the issue body / prompt)")
+    run_p.add_argument("--workdir", default=None,
+        help="working directory; STATE_DIR resolves under <workdir>/.agcl")
+    run_p.add_argument("--output", default="jsonl",
+        choices=["jsonl", "sse", "text"])
+    run_p.add_argument("--session-id", default="default")
+    run_p.add_argument("--provider", default=None, choices=["openai", "claude"])
+    run_p.add_argument("--cloud", action="store_true",
+        help="force cloud-only for this turn (skips local MAS)")
+    run_p.add_argument("--continue-with-cloud", action="store_true",
+        help="local prefix + cloud finishes (one-shot continuator mode)")
+    run_p.add_argument("--skill", action="append", default=None,
+        help="path to a markdown skill bundle; repeatable; prepended as context")
+    run_p.add_argument("--max-new-tokens", type=int, default=256)
+    run_p.add_argument("--resume", default=None,
+        help="resume a previous session by id (alias for --session-id)")
+
+    # `orchestrate` positions AGCL as a *local orchestrator* for self-hosted
+    # external sites: drive a remote AGCL node from this CLI, run a series
+    # of tasks, fan out to multiple endpoints. Reads a YAML/JSON playbook
+    # OR a single --task with --target <url>.
+    orch_p = sub.add_parser("orchestrate",
+        help="drive remote AGCL nodes / self-hosted sites as an orchestrator")
+    orch_p.add_argument("playbook", nargs="?", default=None,
+        help="path to a playbook (.json or .yaml). omit for --task one-shot")
+    orch_p.add_argument("--target", default=None,
+        help="single target URL: http://host:9876 or wss://...")
+    orch_p.add_argument("--auth-key", default=None,
+        help="bearer token for the target (or AGCL_TARGET_KEY env)")
+    orch_p.add_argument("--task", default=None,
+        help="single task; if omitted, requires a playbook")
+    orch_p.add_argument("--output", default="jsonl",
+        choices=["jsonl", "text"])
+    orch_p.add_argument("--parallel", type=int, default=1,
+        help="max concurrent targets when fanning out")
+
+    # `config` import / export / hint — centralised knob bundle for sharing
+    cfg_p = sub.add_parser("config",
+        help="export / import the AGCL config bundle (env + mas.json)")
+    cfg_p.add_argument("action", choices=["export", "import", "hint", "show"],
+        nargs="?", default="show")
+    cfg_p.add_argument("path", nargs="?", default=None,
+        help="path to the bundle file (defaults: agcl-config.json)")
+    cfg_p.add_argument("--apply", action="store_true",
+        help="actually write changes (without --apply, import only validates)")
+
+    # `toolkit` controls the infra/inference adapters subsystem
+    tk_p = sub.add_parser("toolkit",
+        help="infra/inference toolkit (litellm, ollama, vllm, redis, s3, cloudflare, docker, k8s, ...)")
+    tk_p.add_argument("action", choices=[
+        "discover", "ping", "chat",
+        "emit-docker", "emit-k8s", "emit-gcp",
+        "discord",
+    ], default="discover", nargs="?")
+    tk_p.add_argument("target", nargs="?", default=None,
+        help="`ping <adapter>` or `chat <prompt>`; ignored otherwise")
+    tk_p.add_argument("--out", default=None,
+        help="output dir for emit-docker / emit-k8s")
+    tk_p.add_argument("--gpu", action="store_true",
+        help="emit GPU variant of Dockerfile / Compose")
+    tk_p.add_argument("--model", default=None,
+        help="model alias for `chat` (defaults to AGCL_LLM_MODEL or 'smart')")
+    tk_p.add_argument("--stream", action="store_true",
+        help="stream chat output token-by-token")
 
     # `mini` controls the optional background mini-model trainer
     mp = sub.add_parser("mini", help="background mini-model trainer (toggleable)")
@@ -588,6 +660,14 @@ def main():
     elif args.cmd == "mini":
         _run_mini(args)
     elif args.cmd == "mcp":
+        if args.fast:
+            from agcl.integrations import fast_mcp_server as F
+            if args.transport == "manifest":
+                from agcl.integrations import mcp_server as M
+                sys.exit(M.dump_manifest())
+            if args.transport == "sse":
+                sys.exit(F.run_sse(host=args.host, port=args.port))
+            sys.exit(F.run_stdio())
         from agcl.integrations import mcp_server as M
         if args.transport == "manifest":
             sys.exit(M.dump_manifest())
@@ -603,6 +683,31 @@ def main():
     elif args.cmd == "openapi":
         from agcl.integrations import openapi_export as OA
         sys.exit(OA.export(out=args.out))
+    elif args.cmd == "toolkit":
+        sys.exit(_run_toolkit(args))
+    elif args.cmd == "run":
+        from agcl.runner import run as run_task
+        sid = args.resume or args.session_id
+        sys.exit(run_task(
+            args.task,
+            session_id=sid, workdir=args.workdir, output=args.output,
+            provider=args.provider, force_cloud=args.cloud,
+            force_continue=args.continue_with_cloud,
+            skill_files=args.skill,
+            max_new_tokens=args.max_new_tokens,
+        ))
+    elif args.cmd == "orchestrate":
+        from agcl.orchestrator import run as orchestrate
+        sys.exit(orchestrate(
+            playbook=args.playbook, target=args.target,
+            auth_key=args.auth_key, task=args.task,
+            output=args.output, parallel=args.parallel,
+        ))
+    elif args.cmd == "config":
+        from agcl.config_bundle import cli as run_config_bundle
+        sys.exit(run_config_bundle(
+            action=args.action, path=args.path, apply=args.apply,
+        ))
     else:
         # default: persistent TUI shell. Server is opt-in via "serve"/"node"
         # subcommands or the in-shell menu.
@@ -652,6 +757,153 @@ def _run_mini(args):
         print(f"  step={r['step']} arch={r['arch']} strategy={r['strategy']}")
         print(f"  decoded > {r['decoded']!r}")
         return
+
+
+def _run_toolkit(args) -> int:
+    """
+    `python main.py toolkit ...`
+
+    Drive the infra/inference adapter layer from the CLI:
+
+        toolkit discover                  # what's configured + importable
+        toolkit ping ollama|vllm|...      # reachability check
+        toolkit chat "<prompt>"           # send through gateway
+        toolkit emit-docker [--gpu] [--out deploy]
+        toolkit emit-k8s                  # write Helm chart + manifests
+        toolkit discord                   # run the Discord bot adapter
+    """
+    from agcl.toolkit import registry
+    action = args.action
+
+    if action == "discover":
+        adapters = registry.discover()
+        # Two-column table: name + status. No emojis.
+        for name, info in adapters.items():
+            cfg = "configured" if info["configured"] else "off"
+            imp = "ok" if info["importable"] else "missing"
+            print(f"  {name:<12} {cfg:<12} import:{imp}")
+            if info.get("import_err"):
+                print(f"               -> {info['import_err']}")
+        return 0
+
+    if action == "ping":
+        target = args.target or ""
+        if not target:
+            print("usage: python main.py toolkit ping <adapter>", file=sys.stderr)
+            return 2
+        return _ping_adapter(target)
+
+    if action == "chat":
+        prompt = args.target or ""
+        if not prompt:
+            print("usage: python main.py toolkit chat \"<prompt>\"", file=sys.stderr)
+            return 2
+        return _toolkit_chat(prompt, model=args.model, stream=args.stream)
+
+    if action == "emit-docker":
+        from agcl.toolkit import docker as D
+        out = args.out or "deploy"
+        result = D.write_to(out)
+        # Override compose to honor --gpu flag.
+        compose_path = f"{out}/docker-compose.yml"
+        with open(compose_path, "w") as f:
+            f.write(D.compose(gpu=args.gpu))
+        for f in result["files"]:
+            print(f"  wrote {f}")
+        return 0
+
+    if action == "emit-k8s":
+        from agcl.toolkit import k8s as K
+        out = args.out or "deploy/agcl-chart"
+        chart = K.write_chart(out)
+        manifests = K.write_manifests(out + "/manifests")
+        for f in chart["files"] + manifests["files"]:
+            print(f"  wrote {f}")
+        return 0
+
+    if action == "emit-gcp":
+        from agcl.toolkit import gcp as G
+        out = args.out or "deploy/gcp"
+        result = G.write_to(
+            out_dir=out,
+            project=os.getenv("GOOGLE_CLOUD_PROJECT", "PROJECT_ID"),
+            service=os.getenv("AGCL_GCP_SERVICE", "agcl-node"),
+            region=os.getenv("AGCL_GCP_REGION",  "us-central1"),
+        )
+        for f in result["files"]:
+            print(f"  wrote {f}")
+        print(f"  deploy:  {result['deploy_command']}")
+        return 0
+
+    if action == "discord":
+        from agcl.toolkit import discord as D
+        return D.run()
+
+    print(f"unknown toolkit action: {action!r}", file=sys.stderr)
+    return 2
+
+
+def _ping_adapter(name: str) -> int:
+    import asyncio as _aio
+    from agcl.toolkit import (
+        cloudflare, discord, docker, gcp, k8s,
+        litellm_gw, ollama, registry, tgi, vllm,
+    )
+    fns = {
+        "litellm":    litellm_gw.ping,
+        "ollama":     ollama.ping,
+        "vllm":       vllm.ping,
+        "tgi":        tgi.ping,
+        "cloudflare": cloudflare.ping,
+        "discord":    discord.ping,
+    }
+    if name in fns:
+        result = _aio.run(fns[name]())
+    elif name == "redis":
+        result = _aio.run(registry.state_store().ping())
+    elif name == "s3":
+        result = _aio.run(registry.checkpoint_store().ping())
+    elif name == "docker":
+        result = docker.ping()
+    elif name == "k8s":
+        result = k8s.ping()
+    elif name == "gcp":
+        result = gcp.ping()
+    else:
+        print(f"unknown adapter: {name!r}", file=sys.stderr)
+        return 2
+    for k, v in result.items():
+        print(f"  {k:<14} {v}")
+    return 0 if result.get("ok") else 1
+
+
+def _toolkit_chat(prompt: str, model=None, stream: bool = False) -> int:
+    import asyncio as _aio
+    from agcl.toolkit import registry
+
+    client = registry.get_chat_client()
+    if client is None:
+        print("no gateway configured. set AGCL_LLM_BASE_URL, VLLM_HOST, "
+              "or OLLAMA_HOST.", file=sys.stderr)
+        return 1
+    use_model = model or getattr(client, "default_model", None) or "smart"
+    msgs = [{"role": "user", "content": prompt}]
+
+    async def _run():
+        try:
+            if stream:
+                async for chunk in client.stream(msgs, model=use_model):
+                    print(chunk, end="", flush=True)
+                print()
+            else:
+                resp = await client.chat(msgs, model=use_model)
+                content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+                print(content)
+        finally:
+            await client.aclose()
+
+    _aio.run(_run())
+    return 0
 
 
 if __name__ == "__main__":

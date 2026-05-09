@@ -10,13 +10,13 @@ It assumes you've at least run the project once. If not, start at
 > **Where you are:**  this is the configuration walkthrough.
 > Other docs:
 > - **[guide.md](guide.md)** — first-time setup
-> - **[training.md](training.md)** — what auto-training actually does
-> - **[integration.md](integration.md)** — node API for GUI integration
-> - **[advanced_guide.md](advanced_guide.md)** — picking models and
+> - **[training.md](recursive/training.md)** — what auto-training actually does
+> - **[gui.md](gui.md)** — node API for GUI integration
+> - **[recursive/advanced.md](recursive/advanced.md)** — picking models and
 >   patterns
-> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+> - **[recursive/setup.md](recursive/setup.md)** — terse
 >   reference for the recursive feature
-> - **[main.md](main.md)** — per-file code reference
+> - **[main.md](code-map.md)** — per-file code reference
 
 ---
 
@@ -197,7 +197,7 @@ one is the one that produces text.
 Each agent has different "thinking dimensions" (hidden size). Change
 the order and the projection MLPs between them have different shapes.
 Saved trained-link files become incompatible (signature mismatch — see
-[training.md](training.md#step-2--resolving-a-topic-retrieve-or-train)).
+[training.md](recursive/training.md#step-2--resolving-a-topic-retrieve-or-train)).
 
 In practice: changing `mas.json` means saved topics for the old setup
 won't load. They're not deleted, just ignored. To clean up:
@@ -474,7 +474,7 @@ they're per-run choices, not persistent ones.
 | `--no-persist` | off | Don't save trained links / centroids to disk |
 
 For the conceptual meaning of each, see
-**[training.md](training.md#tunables--what-to-change-and-when)**.
+**[training.md](recursive/training.md#tunables--what-to-change-and-when)**.
 
 ---
 
@@ -546,10 +546,10 @@ HF_HOME / HF_HUB_CACHE override HF cache directory
 
 ## Where to go next
 
-- **[training.md](training.md)** — what auto-training is doing under
+- **[training.md](recursive/training.md)** — what auto-training is doing under
   the hood
-- **[advanced_guide.md](advanced_guide.md)** — picking models, mixing
+- **[recursive/advanced.md](recursive/advanced.md)** — picking models, mixing
   HF + GGUF, training tutorials
-- **[recursive_mas_setup.md](recursive_mas_setup.md)** — the dense
+- **[recursive/setup.md](recursive/setup.md)** — the dense
   technical spec
-- **[main.md](main.md)** — per-file code reference
+- **[main.md](code-map.md)** — per-file code reference

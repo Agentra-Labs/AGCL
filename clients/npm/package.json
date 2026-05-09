@@ -1,0 +1,41 @@
+{
+  "name": "@agcl/client",
+  "version": "0.1.0",
+  "description": "TypeScript client for the AGCL node server (HTTP+SSE, recursive MAS, toolkit gateway).",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./toolkit": {
+      "types": "./dist/toolkit.d.ts",
+      "import": "./dist/toolkit.js",
+      "require": "./dist/toolkit.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/toolkit.ts --format esm,cjs --dts --sourcemap --clean",
+    "dev":   "tsup src/index.ts src/toolkit.ts --format esm,cjs --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "test":  "node --test test/",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": { "node": ">=18" },
+  "keywords": ["agcl", "agent", "llm", "claude", "openai", "ollama", "litellm", "mas"],
+  "repository": "https://github.com/Agentra-Labs/AGCL",
+  "homepage": "https://github.com/Agentra-Labs/AGCL/tree/main/clients/npm",
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}

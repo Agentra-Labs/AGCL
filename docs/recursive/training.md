@@ -11,15 +11,15 @@ of "vectors" and "loss" is enough.
 
 > **Where you are:**  this is the deep-dive on training.
 > Other useful docs:
-> - **[guide.md](guide.md)** — first-time setup (you are here if you've
+> - **[guide.md](../guide.md)** — first-time setup (you are here if you've
 >   already done the 15-minute beginner walkthrough)
-> - **[configuration.md](configuration.md)** — what every knob does
-> - **[integration.md](integration.md)** — node API for GUI integration
+> - **[configuration.md](../configuration.md)** — what every knob does
+> - **[gui.md](../gui.md)** — node API for GUI integration
 >   (the SSE events you stream to the GUI map directly to the steps
 >   in this doc)
-> - **[advanced_guide.md](advanced_guide.md)** — choosing models &
+> - **[recursive/advanced.md](advanced.md)** — choosing models &
 >   patterns
-> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+> - **[recursive/setup.md](setup.md)** — terse
 >   technical reference
 
 ---
@@ -537,11 +537,11 @@ noticeable.
 
 ## Where to go next
 
-- **[configuration.md](configuration.md)** — every config knob and
+- **[configuration.md](../configuration.md)** — every config knob and
   what it changes
-- **[advanced_guide.md](advanced_guide.md)** — picking models and
+- **[recursive/advanced.md](advanced.md)** — picking models and
   patterns
-- **[recursive_mas_setup.md](recursive_mas_setup.md)** — the terse
+- **[recursive/setup.md](setup.md)** — the terse
   technical reference
 - The actual code is small: see
   `agcl/recursive/auto_train.py`,

@@ -1,20 +1,84 @@
-# AGCL agent-platform integrations
+# Agent-platform & infra integrations
 
-AGCL ships with adapters for the major agent platforms in the 2025-26
-ecosystem. The strategy follows the recommended order in your
-`Agent Platform Integration Guide`:
+<p align="left">
+  <img src="assets/anthropic.svg" width="22" alt="Anthropic" />&nbsp;
+  <img src="assets/openai.svg" width="22" alt="OpenAI" />&nbsp;
+  <img src="assets/huggingface.svg" width="22" alt="Hugging Face" />&nbsp;
+  <img src="assets/slack.svg" width="22" alt="Slack" />&nbsp;
+  <img src="assets/discord.svg" width="22" alt="Discord" />&nbsp;
+  <img src="assets/docker.svg" width="22" alt="Docker" />&nbsp;
+  <img src="assets/kubernetes.svg" width="22" alt="Kubernetes" />&nbsp;
+  <img src="assets/npm.svg" width="22" alt="npm" />&nbsp;
+  <img src="assets/cloudflare.svg" width="22" alt="Cloudflare" />&nbsp;
+  <img src="assets/redis.svg" width="22" alt="Redis" />
+</p>
 
-1. **Build one MCP server** - covers Claude Desktop / Code, Cursor,
-   OpenAI Agents SDK, LangChain, CrewAI, AutoGen, Copilot Studio,
-   Cloudflare Agents.
-2. **Add a Slack Bolt adapter** - covers Slack AI Apps natively.
-3. **Publish an OpenAPI 3.0 spec** - covers Zapier, n8n (webhook
-   mode), Vertex AI Extensions, Copilot Studio (fallback).
-4. **Wrap as an OpenAgents AgentMod** - covers openagents.org.
+This is the front door for plugging AGCL into the rest of the
+ecosystem. Each row is one page; pick the surface you actually need.
 
-Every adapter wraps the same tool registry at
-[agcl/integrations/manifest.py](../agcl/integrations/manifest.py),
-so adding a new tool surfaces it everywhere at once.
+> **Sister doc:** for wiring AGCL into a GUI / web frontend (the node
+> server's HTTP+SSE contract), see **[gui.md](gui.md)**.
+
+---
+
+## What's actually shipping
+
+AGCL is reachable through three concrete contracts. Pick whichever
+matches the tool you're connecting:
+
+| Contract | Reach it via | Doc |
+|---|---|---|
+| **HTTP + SSE** under `/node/*` (auth: bearer) | `python main.py node` | [gui.md](gui.md) |
+| **JSONL on stdout** (event taxonomy: status / thinking / text / answer / done / error) | `python main.py run --output jsonl` | [headless-run](integrations/headless-run.md) |
+| **MCP** (stdio, SSE, or FastMCP) — wraps the tool registry from [`agcl/integrations/manifest.py`](../agcl/integrations/manifest.py) | `python main.py mcp [--fast]` | [mcp.md](integrations/mcp.md) |
+
+Every adapter (Slack, Discord, OpenAgents, OpenAPI, Multica) wraps one
+of those three. Adding a new tool means one entry in `manifest.py` —
+it surfaces in every adapter automatically.
+
+---
+
+## Agent-platform adapters
+
+| Surface | Page |
+|---|---|
+| <img src="https://img.shields.io/badge/MCP-stdio%20%7C%20SSE%20%7C%20FastMCP-000000" alt="MCP" /> Universal — Claude / Cursor / OpenAI Agents / LangChain / CrewAI / AutoGen / Copilot / Vercel | **[mcp.md](integrations/mcp.md)** |
+| <img src="assets/slack.svg" width="14" align="absmiddle" alt="Slack" />&nbsp;Slack AI Apps (Bolt for Python) | **[slack.md](integrations/slack.md)** |
+| <img src="assets/discord.svg" width="14" align="absmiddle" alt="Discord" />&nbsp;Discord (slash commands + agent bus) | **[discord.md](integrations/discord.md)** |
+| OpenAgents (openagents.org AgentMod) | **[openagents.md](integrations/openagents.md)** |
+| <img src="https://img.shields.io/badge/OpenAPI-3.0-6BA539" alt="OpenAPI" /> Zapier / n8n / Vertex AI / Copilot Studio | **[openapi.md](integrations/openapi.md)** |
+| Multica.ai task control plane (jsonl bridge + skill ctx) | **[multica.md](integrations/multica.md)** |
+| Headless task runner — Cloud Run jobs, GitHub Actions, shell scripts | **[headless-run.md](integrations/headless-run.md)** |
+
+---
+
+## Packaging & runtime
+
+| Surface | Page |
+|---|---|
+| <img src="assets/npm.svg" width="14" align="absmiddle" alt="npm" />&nbsp;npm — JavaScript / TypeScript client package | **[npm.md](integrations/npm.md)** |
+| <img src="assets/docker.svg" width="14" align="absmiddle" alt="Docker" />&nbsp;Docker — single Dockerfile + Compose stack | **[docker.md](integrations/docker.md)** |
+
+---
+
+## Cloud / infra
+
+The full cloud-stack story (provider gateway → inference → state →
+storage → edge) lives under **[cloud.md](integrations/cloud.md)**.
+Direct links:
+
+| # | Topic | Page |
+|---|---|---|
+| 1 | LiteLLM — provider abstraction gateway | **[cloud/litellm.md](integrations/cloud/litellm.md)** |
+| 2 | Ollama — local / LAN / remote inference | **[cloud/ollama.md](integrations/cloud/ollama.md)** |
+| 3 | vLLM — high-throughput inference backend | **[cloud/vllm.md](integrations/cloud/vllm.md)** |
+| 4 | Redis / Valkey — distributed session state | **[cloud/redis.md](integrations/cloud/redis.md)** |
+| 5 | Kubernetes + Helm — infra packaging | **[cloud/k8s.md](integrations/cloud/k8s.md)** |
+| 6 | S3-compatible persistence | **[cloud/s3.md](integrations/cloud/s3.md)** |
+| 7 | Cloudflare Workers + Durable Objects (edge relay) | **[cloud/cloudflare.md](integrations/cloud/cloudflare.md)** |
+| 8 | HuggingFace TGI (legacy / HF Endpoints) | **[cloud/tgi.md](integrations/cloud/tgi.md)** |
+| 9 | WebRTC node transport (experimental) | **[cloud/webrtc.md](integrations/cloud/webrtc.md)** |
+| 10 | GCP Cloud Run hosting (incl. MCP-on-Cloud-Run) | **[cloud/gcp.md](integrations/cloud/gcp.md)** |
 
 ---
 
@@ -33,155 +97,18 @@ so adding a new tool surfaces it everywhere at once.
 | `agcl.mini.start` / `stop` | Toggle the background trainer |
 | `agcl.topics.list`    | List saved trained-topic checkpoints |
 | `agcl.plugins.list`   | List discovered AGCL plugins |
+| `agcl.toolkit.discover` | Snapshot of which infra adapters are configured + importable |
+| `agcl.toolkit.ping`   | Reachability check against one toolkit adapter |
+| `agcl.toolkit.chat`   | Chat through whichever inference gateway is configured |
+| `agcl.toolkit.emit_docker` | Generate Dockerfile + Compose for the current config |
+| `agcl.toolkit.emit_k8s` | Generate Helm chart + standalone manifests |
+| `agcl.toolkit.emit_gcp` | Generate Cloud Run service.yaml + Cloud Build pipeline |
+| `agcl.multica.run`    | (plugin) Run a task in the Multica jsonl event taxonomy |
 
 Plugins extend the registry at runtime via
-`agcl.integrations.manifest.register_tool(name, description, schema, handler)`.
-
----
-
-## 1. MCP server (the universal one)
-
-**Install (only when you actually run it):**
-
-```bash
-pip install mcp
-```
-
-**stdio transport (Claude Desktop, Cursor, Claude Code):**
-
-```bash
-python main.py mcp
-```
-
-In `~/.config/claude/claude_desktop_config.json` (or your client's
-equivalent):
-
-```json
-{
-  "mcpServers": {
-    "agcl": {
-      "command": "python",
-      "args":    ["/path/to/AGCL/main.py", "mcp"]
-    }
-  }
-}
-```
-
-**HTTP SSE transport (any MCP HTTP client, Copilot Studio, etc.):**
-
-```bash
-python main.py mcp --transport sse --host 127.0.0.1 --port 8765
-```
-
-**Static manifest dump (no SDK needed - useful for inspection / static
-distribution):**
-
-```bash
-python main.py mcp --transport manifest > agcl.mcp.json
-```
-
-The manifest format follows the MCP tool spec:
-
-```json
-{
-  "name": "agcl",
-  "version": "1",
-  "tools": [
-    {"name": "agcl.mas.run", "description": "...",
-     "inputSchema": {"type": "object", "properties": {...}, "required": [...]}}
-  ]
-}
-```
-
-That single artifact is what Claude / Cursor / OpenAI Agents SDK /
-LangChain / CrewAI / AutoGen / Copilot Studio all consume.
-
----
-
-## 2. Slack AI Apps (Bolt for Python)
-
-**Install:**
-
-```bash
-pip install slack-bolt              # HTTP mode
-pip install slack-bolt[socket-mode] # Socket Mode (better for dev)
-```
-
-**Slack app config (do once in api.slack.com/apps):**
-
-| Required | Value |
-|---|---|
-| Bot Token Scopes  | `assistant:write`, `chat:write`, `channels:history`, `im:history`, `im:read` |
-| Event subscriptions | `assistant_thread_started`, `assistant_thread_context_changed`, `message.im` |
-| Features | Enable "Agents & AI Apps" |
-
-**Run (Socket Mode, recommended for dev):**
-
-```bash
-export SLACK_BOT_TOKEN=xoxb-...
-export SLACK_APP_TOKEN=xapp-...
-python main.py slack
-```
-
-**Run (HTTP mode, for production):**
-
-```bash
-export SLACK_BOT_TOKEN=xoxb-...
-export SLACK_SIGNING_SECRET=...
-python main.py slack --http --port 3000
-```
-
-The adapter routes Slack DMs into `agcl.mas.run` with one AGCL session
-per Slack user (`session_id="slack-<user_id>"`), so each user keeps an
-independent recursive-MAS context. The first message in any thread
-triggers a `"AGCL ready..."` greeting via `assistant_thread_started`.
-
----
-
-## 3. OpenAgents (openagents.org)
-
-**Install:**
-
-```bash
-pip install openagents[sdk]
-```
-
-**Run:**
-
-```bash
-python main.py agentmod                          # register, don't join
-python main.py agentmod --workspace ws-abc123    # join a workspace
-```
-
-The mod's `on_message` routes free-text into `agcl.mas.run`. The
-`on_task` hook accepts `{"tool": "agcl.mini.test", "args": {...}}`
-shapes for explicit tool calls, falling back to a list of available
-tool names if an unknown id is requested.
-
-To use the AGCL mod from your own OpenAgents network code:
-
-```python
-from agcl.integrations.openagents import AGCLMod
-mod = AGCLMod()
-mod.join("ws-abc123")
-```
-
----
-
-## 4. OpenAPI 3.0 (Zapier / Copilot Studio / Vertex AI / n8n)
-
-The node server already exposes a complete OpenAPI document at
-`/openapi.json`. For platforms that want a static spec (Zapier
-Developer Platform, Copilot Studio's "Add a plugin", Vertex AI
-Extensions), dump it once:
-
-```bash
-python main.py openapi --out agcl.openapi.json
-```
-
-Upload `agcl.openapi.json` to whichever portal asks for one. The
-document is a strict subset of OpenAPI 3.0 generated by FastAPI so it
-imports cleanly into all four target platforms.
+`agcl.integrations.manifest.register_tool(name, description, schema, handler)`
+or, from a plugin's `register(ctx)` callback, via
+`ctx.add_tool(name, description, schema, handler)`.
 
 ---
 
@@ -199,6 +126,8 @@ imports cleanly into all four target platforms.
 | Copilot Studio      | MCP HTTP SSE *or* OpenAPI            | `python main.py mcp --transport sse` |
 | Cloudflare Agents   | MCP                                  | same |
 | Slack AI Apps       | Bolt SDK adapter                     | `python main.py slack` |
+| Discord             | discord.py adapter                   | `python main.py toolkit discord` |
+| Multica.ai          | jsonl runner + plugin                | `python main.py run --output jsonl` |
 | OpenAgents          | AgentMod adapter                     | `python main.py agentmod` |
 | Zapier              | OpenAPI                              | `python main.py openapi --out agcl.openapi.json` |
 | n8n (webhook)       | OpenAPI                              | same |

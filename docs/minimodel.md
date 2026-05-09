@@ -138,7 +138,7 @@ python main.py mini presets
 
 ### From HTTP
 
-See [endpoint.md](endpoint.md#7-mini-model-control-endpoints).
+See [plugins.md](plugins.md#7-mini-model-control-endpoints).
 
 ### Hot-editable knobs
 

@@ -8,13 +8,13 @@ sections as a reference when you need to find or change something specific.
 > - **[guide.md](guide.md)** — first-time setup
 > - **[configuration.md](configuration.md)** — every config knob in
 >   plain English
-> - **[training.md](training.md)** — what auto-training does, step
+> - **[training.md](recursive/training.md)** — what auto-training does, step
 >   by step
-> - **[integration.md](integration.md)** — node-server API for GUI
+> - **[gui.md](gui.md)** — node-server API for GUI
 >   integration
-> - **[advanced_guide.md](advanced_guide.md)** — picking models and
+> - **[recursive/advanced.md](recursive/advanced.md)** — picking models and
 >   patterns
-> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+> - **[recursive/setup.md](recursive/setup.md)** — terse
 >   technical reference for the multi-agent feature
 
 ---
@@ -584,7 +584,7 @@ Files:
                     token CE; agents auto-frozen),
                     cloud_confirm_switch (yes/no topic-switch oracle),
                     TopicTracker (EMA centroid over planner embeddings).
-                    See docs/training.md for the conceptual walkthrough.
+                    See docs/recursive/training.md for the conceptual walkthrough.
     session.py      RecursiveSession — multi-turn driver. Per turn:
                     (1) topic gate (planner embed + optional cloud confirm),
                     (2) topic resolution (retrieve saved topic by similarity
@@ -634,7 +634,7 @@ CLI:
     python main.py recursive run "your prompt"     # build from config and run
 
 Full setup walkthrough (mixed HF/GGUF chains, all 4 patterns, training,
-troubleshooting): see  docs/recursive_mas_setup.md.
+troubleshooting): see  docs/recursive/setup.md.
 
 To run:
     uvicorn main:app --port 8000 --reload

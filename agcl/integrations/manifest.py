@@ -134,6 +134,97 @@ def _h_plugins_list(_args: Dict[str, Any]) -> Dict[str, Any]:
     return {"plugins": P.loaded(), "commands": list(P.commands().keys())}
 
 
+# ---- toolkit tools ---------------------------------------------------
+
+def _h_toolkit_discover(_args: Dict[str, Any]) -> Dict[str, Any]:
+    from agcl.toolkit import registry
+    return {"adapters": registry.discover()}
+
+
+def _h_toolkit_ping(args: Dict[str, Any]) -> Dict[str, Any]:
+    name = (args.get("adapter") or "").strip()
+    if not name:
+        return {"error": "adapter required"}
+    from agcl.toolkit import (
+        cloudflare, discord, docker, k8s,
+        litellm_gw, ollama, registry, tgi, vllm,
+    )
+    fns = {
+        "litellm":    litellm_gw.ping,
+        "ollama":     ollama.ping,
+        "vllm":       vllm.ping,
+        "tgi":        tgi.ping,
+        "cloudflare": cloudflare.ping,
+        "discord":    discord.ping,
+    }
+    if name in fns:
+        return asyncio.run(fns[name]())
+    if name == "redis":
+        return asyncio.run(registry.state_store().ping())
+    if name == "s3":
+        return asyncio.run(registry.checkpoint_store().ping())
+    if name == "docker":
+        return docker.ping()
+    if name == "k8s":
+        return k8s.ping()
+    return {"error": f"unknown adapter: {name!r}"}
+
+
+def _h_toolkit_chat(args: Dict[str, Any]) -> Dict[str, Any]:
+    from agcl.toolkit import registry
+    msg = (args.get("message") or "").strip()
+    if not msg:
+        return {"error": "message required"}
+    client = registry.get_chat_client()
+    if client is None:
+        return {"error": "no gateway configured "
+                         "(set AGCL_LLM_BASE_URL, VLLM_HOST, or OLLAMA_HOST)"}
+    model = args.get("model") or getattr(client, "default_model", None) or "smart"
+
+    async def _run():
+        try:
+            return await client.chat(
+                [{"role": "user", "content": msg}],
+                model=model,
+                max_tokens=args.get("max_tokens"),
+                temperature=args.get("temperature"),
+            )
+        finally:
+            await client.aclose()
+    resp = asyncio.run(_run())
+    content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+    return {"answer": content, "model": model, "raw": resp}
+
+
+def _h_toolkit_emit_docker(args: Dict[str, Any]) -> Dict[str, Any]:
+    from agcl.toolkit import docker as D
+    out = args.get("out") or "deploy"
+    gpu = bool(args.get("gpu", False))
+    result = D.write_to(out)
+    with open(f"{out}/docker-compose.yml", "w") as f:
+        f.write(D.compose(gpu=gpu))
+    return result
+
+
+def _h_toolkit_emit_k8s(args: Dict[str, Any]) -> Dict[str, Any]:
+    from agcl.toolkit import k8s as K
+    out = args.get("out") or "deploy/agcl-chart"
+    chart = K.write_chart(out)
+    manifests = K.write_manifests(out + "/manifests")
+    return {"chart": chart, "manifests": manifests}
+
+
+def _h_toolkit_emit_gcp(args: Dict[str, Any]) -> Dict[str, Any]:
+    import os
+    from agcl.toolkit import gcp as G
+    return G.write_to(
+        out_dir=args.get("out") or "deploy/gcp",
+        project=args.get("project") or os.getenv("GOOGLE_CLOUD_PROJECT", "PROJECT_ID"),
+        service=args.get("service") or os.getenv("AGCL_GCP_SERVICE", "agcl-node"),
+        region=args.get("region")  or os.getenv("AGCL_GCP_REGION", "us-central1"),
+    )
+
+
 # ---------------------------------------------------------------------
 # Per-process state shared by all tool calls. Adapters that want a
 # cleaner reset should call clear_state() between runs.
@@ -256,6 +347,82 @@ TOOLS: List[Dict[str, Any]] = [
         "description": "List discovered AGCL plugins and their CLI commands.",
         "schema": {"type": "object", "properties": {}},
         "handler": _h_plugins_list,
+    },
+    # ---- toolkit tools ----
+    {
+        "name": "agcl.toolkit.discover",
+        "description": "Snapshot which infra/inference adapters (LiteLLM, Ollama, "
+                       "vLLM, Redis, S3, Cloudflare, Docker, K8s) are configured "
+                       "and importable.",
+        "schema": {"type": "object", "properties": {}},
+        "handler": _h_toolkit_discover,
+    },
+    {
+        "name": "agcl.toolkit.ping",
+        "description": "Reachability check against one toolkit adapter "
+                       "(litellm | ollama | vllm | tgi | redis | s3 | "
+                       "cloudflare | discord | docker | k8s).",
+        "schema": {
+            "type": "object",
+            "properties": {"adapter": {"type": "string"}},
+            "required": ["adapter"],
+        },
+        "handler": _h_toolkit_ping,
+    },
+    {
+        "name": "agcl.toolkit.chat",
+        "description": "Send one chat completion through whichever inference "
+                       "backend is configured (gateway-aware: LiteLLM > vLLM > "
+                       "Ollama). Returns the assistant message text.",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "message":     {"type": "string"},
+                "model":       {"type": "string"},
+                "max_tokens":  {"type": "integer"},
+                "temperature": {"type": "number"},
+            },
+            "required": ["message"],
+        },
+        "handler": _h_toolkit_chat,
+    },
+    {
+        "name": "agcl.toolkit.emit_docker",
+        "description": "Generate Dockerfile + docker-compose.yml + .dockerignore "
+                       "for the current AGCL config.",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "out": {"type": "string", "default": "deploy"},
+                "gpu": {"type": "boolean", "default": False},
+            },
+        },
+        "handler": _h_toolkit_emit_docker,
+    },
+    {
+        "name": "agcl.toolkit.emit_k8s",
+        "description": "Generate a Helm chart + standalone Kubernetes manifests "
+                       "for the current AGCL config.",
+        "schema": {
+            "type": "object",
+            "properties": {"out": {"type": "string", "default": "deploy/agcl-chart"}},
+        },
+        "handler": _h_toolkit_emit_k8s,
+    },
+    {
+        "name": "agcl.toolkit.emit_gcp",
+        "description": "Generate Cloud Run service.yaml + cloudbuild.yaml + "
+                       "Secret Manager helper to deploy AGCL to GCP.",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "out":     {"type": "string", "default": "deploy/gcp"},
+                "project": {"type": "string"},
+                "service": {"type": "string", "default": "agcl-node"},
+                "region":  {"type": "string", "default": "us-central1"},
+            },
+        },
+        "handler": _h_toolkit_emit_gcp,
     },
 ]
 

@@ -585,17 +585,153 @@ def make_node_router() -> APIRouter:
     # A plugin is a Python file in `plugins/` that exposes a `register(ctx)`
     # function. `ctx` is a small object giving the plugin access to the
     # node router, the MAS singleton accessor, and the session map. The
-    # contract is documented in docs/endpoint.md.
+    # contract is documented in docs/plugins.md.
 
     @r.get("/plugins")
     def list_plugins():
-        from agcl.plugins import loaded as _loaded
-        return {"plugins": _loaded()}
+        from agcl.plugins import (
+            loaded as _loaded, commands as _commands,
+            declared_configs as _configs, plugin_tools as _tools,
+        )
+        return {
+            "plugins":  _loaded(),
+            "commands": [{"name": k, "help": v.get("help", ""),
+                           "aliases": v.get("aliases", [])}
+                          for k, v in _commands().items()],
+            "config":   _configs(),
+            "tools":    _tools(),
+        }
+
+    @r.post("/plugins/reload")
+    def reload_plugins():
+        """Re-discover and re-register all plugins without restarting the
+        node. Useful while developing a plugin. Existing routes registered
+        by previous loads are NOT removed (FastAPI doesn't support that
+        cleanly), so add a route once and edit it in place."""
+        from agcl import plugins as _plg
+        return {"ok": True, "plugins": _plg.load_plugins(r)}
+
+    # ---- generic config exposure --------------------------------------
+    # `/node/config` already exposes the curated knob tree. These three
+    # routes are the lower-level, fully-generic surface so a GUI or
+    # plugin can read/write any env var (whitelisted), get the running
+    # config bundle, and inspect runtime info — without us having to
+    # extend the curated patch model every time someone adds a knob.
+
+    @r.get("/config/env")
+    def get_env(prefix: Optional[str] = None):
+        """Return all AGCL-relevant env vars currently in the process.
+        Optional `?prefix=AGCL_` filters; secrets are masked."""
+        SECRET = ("KEY", "SECRET", "TOKEN", "PASSWORD")
+        out: Dict[str, str] = {}
+        for k, v in os.environ.items():
+            if prefix and not k.startswith(prefix):
+                continue
+            # Heuristic mask: anything that looks like a secret only shows length.
+            if any(s in k for s in SECRET):
+                out[k] = f"***({len(v)} chars)" if v else ""
+            else:
+                out[k] = v
+        return {"env": out, "count": len(out)}
+
+    class EnvPatch(BaseModel):
+        updates: Dict[str, str]
+        persist: bool = True
+        allowlist_only: bool = True
+
+    @r.patch("/config/env")
+    def patch_env(body: EnvPatch):
+        """
+        Generic env-var patch. By default only allows keys from the
+        bundle allowlist (so nobody can drop arbitrary vars from a
+        compromised GUI). Writes to .env when `persist=True`.
+        """
+        from agcl.config_bundle import _EXPORT_ENV  # noqa: PLC2701
+        allow = set(_EXPORT_ENV)
+        rejected: List[str] = []
+        applied: Dict[str, str] = {}
+        for k, v in body.updates.items():
+            if body.allowlist_only and k not in allow:
+                rejected.append(k)
+                continue
+            os.environ[k] = str(v)
+            applied[k] = str(v)
+        if body.persist and applied:
+            _persist_env(applied)
+        return {"ok": True, "applied": list(applied),
+                "rejected": rejected, "persisted": body.persist}
+
+    @r.get("/config/all")
+    def config_all():
+        """Full config bundle (the same shape as `agcl config export`)."""
+        from agcl.config_bundle import export
+        # Write to a tmp path that we delete; export() returns the dict.
+        import tempfile
+        with tempfile.NamedTemporaryFile("w+", delete=True, suffix=".json") as tmp:
+            return export(tmp.name)
+
+    @r.post("/config/import")
+    async def config_import(request: Request):
+        """
+        Validate a posted bundle against the local environment. Returns
+        a hint report. With `?apply=true`, also writes .env / mas.json.
+        """
+        from agcl.config_bundle import validate, import_bundle
+        body = await request.json()
+        apply = request.query_params.get("apply", "").lower() in ("1", "true", "yes")
+        if not isinstance(body, dict):
+            raise HTTPException(400, "bundle must be a JSON object")
+        if apply:
+            # Write to disk first so import_bundle can read it back.
+            import tempfile
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
+                tmp.write(json.dumps(body))
+                tmp_path = tmp.name
+            try:
+                return import_bundle(tmp_path, apply=True)
+            finally:
+                try: os.unlink(tmp_path)
+                except OSError: pass
+        return {"dry_run": True, **validate(body)}
+
+    @r.get("/runtime/info")
+    def runtime_info():
+        """Cheap snapshot of the running process — version, threads,
+        loaded providers, GPU presence. Lets a GUI render a 'running on'
+        badge without making three calls."""
+        import platform, sys as _sys
+        info: Dict[str, Any] = {
+            "python":     _sys.version.split()[0],
+            "platform":   platform.platform(),
+            "machine":    platform.machine(),
+            "pid":        os.getpid(),
+            "cwd":        os.getcwd(),
+            "env_count":  len(os.environ),
+        }
+        # Optional GPU detection (cheap — just probes nvidia-smi).
+        try:
+            import shutil, subprocess
+            if shutil.which("nvidia-smi"):
+                out = subprocess.check_output(
+                    ["nvidia-smi", "--query-gpu=name,memory.total",
+                     "--format=csv,noheader"],
+                    timeout=2, stderr=subprocess.DEVNULL,
+                ).decode().strip().splitlines()
+                info["gpus"] = [ln.strip() for ln in out if ln.strip()]
+        except Exception:
+            info["gpus"] = []
+        # Toolkit summary
+        try:
+            from agcl.toolkit import registry as _reg
+            info["toolkit"] = _reg.discover()
+        except Exception:
+            pass
+        return info
 
     # ---- mini-model background trainer --------------------------------
     # Optional, toggleable, pause/resume-able tiny model that trains in
     # the background off latents + reformulations captured during normal
-    # AGCL use. See docs/minimodel.md and docs/endpoint.md.
+    # AGCL use. See docs/minimodel.md and docs/plugins.md.
 
     @r.get("/mini/status")
     def mini_status():
@@ -764,4 +900,15 @@ def build_node_app(auth_key: Optional[str] = None,
     except Exception:
         pass
     base_app.include_router(router)
+
+    # Toolkit router (/node/toolkit/*) — adapters for LiteLLM, Ollama,
+    # vLLM, Redis, S3, Cloudflare, Docker/K8s manifest emitters, WebRTC
+    # signaling. Pulled in as a sibling so `/node` stays the single
+    # auth-gated prefix.
+    try:
+        from agcl.toolkit.endpoints import make_toolkit_router
+        base_app.include_router(make_toolkit_router())
+    except Exception as e:
+        print(f"[node] toolkit router unavailable: {type(e).__name__}: {e}")
+
     return base_app

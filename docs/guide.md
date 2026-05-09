@@ -10,15 +10,15 @@ You will need about 15 minutes and an internet connection.
 > Once you've finished this guide, jump to whichever doc fits your goal:
 > - **[configuration.md](configuration.md)** — what every setting does
 >   (the friendly reference)
-> - **[advanced_guide.md](advanced_guide.md)** — set up the recursive
+> - **[recursive/advanced.md](recursive/advanced.md)** — set up the recursive
 >   multi-agent feature with real models
-> - **[training.md](training.md)** — what happens when the recursive
+> - **[training.md](recursive/training.md)** — what happens when the recursive
 >   feature trains on a question
-> - **[integration.md](integration.md)** — node API for GUI / web
+> - **[gui.md](gui.md)** — node API for GUI / web
 >   frontend integration
-> - **[recursive_mas_setup.md](recursive_mas_setup.md)** — terse
+> - **[recursive/setup.md](recursive/setup.md)** — terse
 >   technical reference
-> - **[main.md](main.md)** — per-file code reference
+> - **[main.md](code-map.md)** — per-file code reference
 
 ---
 
@@ -296,13 +296,13 @@ the cloud once for a polished answer, then trains the small projection
 MLPs between agents to reproduce it locally. Subsequent questions on
 similar topics reuse those trained weights from disk and skip training.
 
-If this is interesting, **[training.md](training.md)** explains
+If this is interesting, **[training.md](recursive/training.md)** explains
 exactly what's happening when you see those `[stage A]`/`[stage B]`
 lines fly by.
 
 When you're ready to set up your own multi-agent system with real
 HuggingFace models, the next walkthrough is
-**[advanced_guide.md](advanced_guide.md)** — same step-by-step style
+**[recursive/advanced.md](recursive/advanced.md)** — same step-by-step style
 as this guide, picks up where this one ends.
 
 ---
@@ -320,10 +320,10 @@ when you're curious:
   `--config` or `--autoconfig`)
 - `agcl/config.py` — defaults for everything tunable
 - `docs/configuration.md` — every config knob explained simply
-- `docs/training.md` — how the recursive feature auto-trains
-- `docs/advanced_guide.md` — picking models for the recursive feature
-- `docs/recursive_mas_setup.md` — terse technical reference
-- `docs/main.md` — what every code file does
+- `docs/recursive/training.md` — how the recursive feature auto-trains
+- `docs/recursive/advanced.md` — picking models for the recursive feature
+- `docs/recursive/setup.md` — terse technical reference
+- `docs/code-map.md` — what every code file does
 - `readme.md` — the short technical overview
 
 ---

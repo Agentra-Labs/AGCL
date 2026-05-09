@@ -11,15 +11,15 @@ If you only want to confirm the implementation works, skip to the bottom:
 
 > **Where you are:** the dense technical reference.
 > Friendlier docs:
-> - **[guide.md](guide.md)** — first-time setup
-> - **[configuration.md](configuration.md)** — config explained for
+> - **[guide.md](../guide.md)** — first-time setup
+> - **[configuration.md](../configuration.md)** — config explained for
 >   beginners
-> - **[advanced_guide.md](advanced_guide.md)** — picking models,
+> - **[recursive/advanced.md](advanced.md)** — picking models,
 >   patterns, training
 > - **[training.md](training.md)** — what auto-training does, step
 >   by step
-> - **[integration.md](integration.md)** — node API for GUI integration
-> - **[main.md](main.md)** — per-file code reference
+> - **[gui.md](../gui.md)** — node API for GUI integration
+> - **[main.md](../code-map.md)** — per-file code reference
 
 
 ## 1. What it does
@@ -188,7 +188,7 @@ Stage 2 — backprop cross-entropy on the final logits across the entire
 unrolled MAS. All inner/outer links + agent params receive gradient.
 
 Both helpers are step-by-step generators — the caller decides how to log
-or stop. See [validate.py](../agcl/recursive/validate.py)
+or stop. See [validate.py](../../agcl/recursive/validate.py)
 `t_stage1_warmup_reduces_loss` and `t_stage2_full_loop_reduces_loss` for
 runnable examples on tiny synthetic data.
 
@@ -345,4 +345,4 @@ subsequent runs do not hit the HF Hub at all. The wizard writes
 Source: `agcl/configurator.py`.
 
 For a guided walkthrough see
-[configuration.md](configuration.md#path-2-interactive-wizard---config).
+[configuration.md](../configuration.md#path-2-interactive-wizard---config).
