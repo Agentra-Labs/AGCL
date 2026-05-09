@@ -1,9 +1,38 @@
-env/
+# Byte-compiled / optimized
 __pycache__/
-.agent_state/
-*.pyc
-models/
-.claude/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Tools
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Environment and secrets (operators use local .env)
 .env
 .env.*
 !.env.example
+
+# Logs / runtime
+*.log
