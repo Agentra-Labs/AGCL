@@ -68,31 +68,73 @@ Reply with exactly one word: yes or no."""
 
 
 async def _cloud_call(prompt: str, provider: Optional[str] = None,
-                      max_tokens: int = 1024) -> str:
-    """Plain single-turn cloud call (no continuation framing)."""
+                      max_tokens: int = 1024,
+                      session_id: Optional[str] = None,
+                      kind: str = "knowledge") -> str:
+    """Plain single-turn cloud call (no continuation framing).
+
+    All bootstrap teacher answers + reformulation requests + topic-switch
+    judgements run through here; tagged `kind="knowledge"` by default so
+    the dashboard can split them out from regular chat usage.
+    """
     from agcl.config import (
         OPENAI_API_KEY, ANTHROPIC_API_KEY,
         OPENAI_MODEL, CLAUDE_MODEL, DEFAULT_CLOUD,
     )
+    from agcl import usage as _usage
+    import time as _t
     provider = provider or DEFAULT_CLOUD
-    if provider == "openai":
-        import openai
-        client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-        resp = await client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+    _usage.check_quota(provider)
+
+    t0 = _t.time()
+    out = ""
+    in_tokens_real = out_tokens_real = None
+    err = None
+    try:
+        if provider == "openai":
+            import openai
+            client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+            resp = await client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+            )
+            out = (resp.choices[0].message.content or "").strip()
+            u = getattr(resp, "usage", None)
+            if u is not None:
+                in_tokens_real  = getattr(u, "prompt_tokens", None)
+                out_tokens_real = getattr(u, "completion_tokens", None)
+            return out
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        resp = await client.messages.create(
+            model=CLAUDE_MODEL,
             max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
         )
-        return (resp.choices[0].message.content or "").strip()
-    import anthropic
-    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-    resp = await client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    parts = [b.text for b in resp.content if hasattr(b, "text")]
-    return "".join(parts).strip()
+        parts = [b.text for b in resp.content if hasattr(b, "text")]
+        out = "".join(parts).strip()
+        u = getattr(resp, "usage", None)
+        if u is not None:
+            in_tokens_real  = getattr(u, "input_tokens", None)
+            out_tokens_real = getattr(u, "output_tokens", None)
+        return out
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+        raise
+    finally:
+        try:
+            _usage.record_call(
+                provider=provider,
+                model=OPENAI_MODEL if provider == "openai" else CLAUDE_MODEL,
+                kind=kind, session_id=session_id,
+                in_tokens=in_tokens_real, out_tokens=out_tokens_real,
+                in_text=prompt if in_tokens_real is None else None,
+                out_text=out if out_tokens_real is None else None,
+                latency_sec=_t.time() - t0, ok=err is None, error=err,
+            )
+        except Exception:
+            pass
 
 
 def _parse_bootstrap(raw: str, fallback_q: str,

@@ -857,6 +857,113 @@ def make_node_router() -> APIRouter:
         S.flush_session(sid)
         return {"ok": True, "flushed": sid}
 
+    # ---- usage / quotas / custom providers --------------------------
+    # Powers the dashboard at /node/dashboard. Every cloud call
+    # (chat-path + knowledge-formation bootstrap) is recorded by
+    # agcl.usage with a `kind` tag, so a GUI can split out training
+    # cost from regular session cost.
+
+    @r.get("/usage/summary")
+    def usage_summary():
+        from agcl import usage as U
+        snap = U.status_snapshot()
+        return {**snap, "sessions": U.all_sessions()}
+
+    @r.get("/usage/providers")
+    def usage_providers():
+        from agcl import usage as U
+        return U.status_snapshot()
+
+    @r.get("/usage/sessions")
+    def usage_sessions():
+        from agcl import usage as U
+        return {"sessions": U.all_sessions()}
+
+    @r.get("/usage/sessions/{sid}")
+    def usage_session_detail(sid: str):
+        from agcl import usage as U
+        return U.session_breakdown(sid)
+
+    @r.get("/usage/timeseries")
+    def usage_timeseries(
+        session_id: Optional[str] = None,
+        provider:   Optional[str] = None,
+        kind:       Optional[str] = None,
+        bucket_sec: int = 60,
+        lookback_sec: int = 3600,
+    ):
+        from agcl import usage as U
+        return {"buckets": U.timeseries(
+            session_id=session_id, provider=provider, kind=kind,
+            bucket_sec=bucket_sec, lookback_sec=lookback_sec,
+        ), "bucket_sec": bucket_sec, "lookback_sec": lookback_sec}
+
+    class QuotaPatch(BaseModel):
+        max_tokens:     Optional[int]   = None
+        max_credit_usd: Optional[float] = None
+        period:         str             = "lifetime"
+        notes:          str             = ""
+
+    @r.put("/usage/quota/{provider}")
+    def set_quota(provider: str, body: QuotaPatch):
+        from agcl import usage as U
+        q = U.set_quota(
+            provider,
+            max_tokens=body.max_tokens,
+            max_credit_usd=body.max_credit_usd,
+            period=body.period,
+            notes=body.notes,
+        )
+        return {"ok": True, "quota": q.to_dict()}
+
+    @r.delete("/usage/quota/{provider}")
+    def delete_quota(provider: str):
+        from agcl import usage as U
+        return {"ok": U.clear_quota(provider)}
+
+    @r.get("/usage/quotas")
+    def get_quotas():
+        from agcl import usage as U
+        return {"quotas": U.all_quotas()}
+
+    class CustomProvider(BaseModel):
+        name:        str
+        base_url:    str
+        api_key_env: str
+        model:       str
+        kind:        str = "openai-compatible"
+        notes:       str = ""
+
+    @r.post("/usage/providers/custom")
+    def register_provider(body: CustomProvider):
+        from agcl import usage as U
+        return U.register_custom_provider(
+            body.name, base_url=body.base_url,
+            api_key_env=body.api_key_env, model=body.model,
+            kind=body.kind, notes=body.notes,
+        )
+
+    @r.get("/usage/providers/custom")
+    def list_custom_providers():
+        from agcl import usage as U
+        return {"providers": U.list_custom_providers()}
+
+    @r.delete("/usage/providers/custom/{name}")
+    def delete_custom_provider(name: str):
+        from agcl import usage as U
+        return {"ok": U.unregister_custom_provider(name)}
+
+    # ---- dashboard (static SPA) -------------------------------------
+    # Single-file HTML+JS+inline-SVG. Lives next to the app so it
+    # benefits from the same auth gate. Browser-side passes the bearer
+    # via a paste-once form, then talks to the same /node/* endpoints.
+
+    @r.get("/dashboard", response_class=None)
+    def dashboard():
+        from fastapi.responses import HTMLResponse
+        from agcl.dashboard import HTML
+        return HTMLResponse(HTML)
+
     return r
 
 

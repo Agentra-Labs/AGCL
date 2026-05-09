@@ -104,15 +104,26 @@ async def _stream_claude(msgs, prefix):
             yield text
 
 
-#  public entry point 
+#  public entry point
 
-async def stream_continuation(history, prefix, provider=None, recovery_mode="natural"):
+async def stream_continuation(history, prefix, provider=None, recovery_mode="natural",
+                                session_id=None, kind="chat"):
     """
     Async generator. Yields text chunks that follow the prefix.
-    Records latency into the pressure tracker when done.
+
+    Records:
+      - latency into the pressure tracker (always)
+      - tokens/cost into agcl.usage (per-call), tagged with `kind` so
+        the dashboard can split chat vs knowledge-formation vs other.
+        `kind` ∈ {"chat", "knowledge", "summarize", "other"}.
+      - quota check fires before the call; QuotaExceeded propagates.
     """
+    from agcl import usage
     provider = provider or DEFAULT_CLOUD
     msgs = _build_messages(history, prefix, recovery_mode)
+
+    # Pre-flight quota check (cheap; raises QuotaExceeded on cap).
+    usage.check_quota(provider)
 
     # If a toolkit gateway is configured (LiteLLM proxy, vLLM, or Ollama),
     # route through it — it handles fallback / retry / spend tracking.
@@ -120,8 +131,16 @@ async def stream_continuation(history, prefix, provider=None, recovery_mode="nat
     import os as _os
     use_gateway = any(_os.getenv(k) for k in
                        ("AGCL_LLM_BASE_URL", "VLLM_HOST", "OLLAMA_HOST"))
+    effective_provider = "litellm" if use_gateway else provider
+    effective_model = (
+        _os.getenv("AGCL_LLM_MODEL", "smart") if use_gateway
+        else (OPENAI_MODEL if provider == "openai" else CLAUDE_MODEL)
+    )
 
+    in_text = "\n".join(m.get("content","") for m in msgs)
+    out_chunks: list = []
     t0 = time.time()
+    err = None
     try:
         if use_gateway:
             gen = _stream_toolkit_gateway(msgs)
@@ -131,19 +150,35 @@ async def stream_continuation(history, prefix, provider=None, recovery_mode="nat
             gen = _stream_claude(msgs, prefix)
 
         async for chunk in gen:
+            out_chunks.append(chunk)
             yield chunk
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+        raise
     finally:
-        prs.record(time.time() - t0)
+        elapsed = time.time() - t0
+        prs.record(elapsed)
+        try:
+            usage.record_call(
+                provider=effective_provider, model=effective_model,
+                kind=kind, session_id=session_id,
+                in_text=in_text, out_text="".join(out_chunks),
+                latency_sec=elapsed, ok=err is None, error=err,
+            )
+        except Exception:
+            # Never let bookkeeping kill a call.
+            pass
 
 
-async def one_shot(history, provider=None):
+async def one_shot(history, provider=None, session_id=None, kind="chat"):
     """
     Plain cloud call with no prefix — used for fallback or non-streaming needs.
     Returns full text string.
     """
     provider = provider or DEFAULT_CLOUD
-    msgs = [m for m in history]
     parts = []
-    async for chunk in stream_continuation(history, prefix="", provider=provider, recovery_mode="natural"):
+    async for chunk in stream_continuation(history, prefix="", provider=provider,
+                                             recovery_mode="natural",
+                                             session_id=session_id, kind=kind):
         parts.append(chunk)
     return "".join(parts)
