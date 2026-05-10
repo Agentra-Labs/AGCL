@@ -14,6 +14,16 @@
 - Reference the branch/PR when applicable.
 - Do not remove or rewrite past entries; corrections should be a new entry.
 
+## [Rebase]: onto origin/main (Beam Phase-1/-2 scaffold)
+
+- Date: 2026-05-10
+- Time (Local TZ): 16:40 IST
+- Branch/PR: main (local) — fast-forward over PR #1 (`chore/beam-agent-harness`)
+- Files Changed (high level): `README.md` (renamed from `readme.md` and merged), `pyproject.toml` (real package now packaged), `agcl/__init__.py`, `agcl/cli.py` (new entry-point bridge), `.gitignore` (restored runtime ignores)
+- Details: See [rebase-onto-beam-harness-10-05-2026.md](rebase-onto-beam-harness-10-05-2026.md)
+- Verification: `import agcl` → 0.1.0; `tests/test_package.py` passes; node app builds 78+ routes; TUI / strict mode / dashboard all still green
+- Notes: zero file-level conflicts during stash pop; reconciliation is purely logical (packaging + README case)
+
 ## [Process]: Beam Phase 3 — AGENTS.md preferences pass closed
 
 - Date: 2026-05-09
