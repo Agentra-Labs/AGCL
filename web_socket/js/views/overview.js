@@ -3,10 +3,10 @@
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el, fmtNum, fmtTs, loadingNode } = window.H;
 
   V.overview = {
     mount(root) {
+      const { el, fmtNum, fmtTs, loadingNode } = window.H;
       const view = {
         unmount() {},
         async refresh() { await load(); },

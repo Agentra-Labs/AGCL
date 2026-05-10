@@ -107,9 +107,13 @@
 
 </div>
 
+<!-- core libs first: charts + markdown + API client + app shell -->
+<!-- (defines window.H, window.UI, window.MD, window.Chart, window.API) -->
 <script src="web_socket/js/lib/markdown.js"></script>
 <script src="web_socket/js/lib/charts.js"></script>
 <script src="web_socket/js/api.js"></script>
+<script src="web_socket/js/app.js"></script>
+<!-- views register themselves on window.Views; loaded AFTER core libs -->
 <script src="web_socket/js/views/overview.js"></script>
 <script src="web_socket/js/views/chat.js"></script>
 <script src="web_socket/js/views/mas.js"></script>
@@ -122,6 +126,5 @@
 <script src="web_socket/js/views/diagnostics.js"></script>
 <script src="web_socket/js/views/actions.js"></script>
 <script src="web_socket/js/views/deploy.js"></script>
-<script src="web_socket/js/app.js"></script>
 </body>
 </html>

@@ -2,10 +2,10 @@
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el, fmtSec, loadingNode } = window.H;
 
   V.diagnostics = {
     mount(root) {
+      const { el, fmtSec, loadingNode } = window.H;
       let timer = null;
       const pressureHist = [];      // rolling [{t, ratio, lat}]
       const MAX_POINTS = 120;

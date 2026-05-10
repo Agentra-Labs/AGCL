@@ -5,10 +5,10 @@
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el } = window.H;
 
   V.deploy = {
     mount(root) {
+      const { el } = window.H;
       let lastKind = null;
 
       const view = {

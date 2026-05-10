@@ -4,10 +4,10 @@
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el, fmtNum, loadingNode } = window.H;
 
   V.mini = {
     mount(root) {
+      const { el, fmtNum, loadingNode } = window.H;
       let pollTimer = null;
       const lossHist = [];
       const tputHist = [];

@@ -6,10 +6,10 @@
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el, fmtTs, loadingNode } = window.H;
 
   V.chat = {
     mount(root) {
+      const { el, fmtTs, loadingNode } = window.H;
       let currentSid = localStorage.getItem("agcl.chat.sid") || "default";
       let activeStream = null;
       let mdEnabled = (localStorage.getItem("agcl.chat.md") ?? "1") === "1";

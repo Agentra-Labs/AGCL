@@ -2,10 +2,10 @@
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el, loadingNode } = window.H;
 
   V.config = {
     mount(root) {
+      const { el, loadingNode } = window.H;
       const view = {
         unmount() {},
         async refresh() { await loadAll(); },

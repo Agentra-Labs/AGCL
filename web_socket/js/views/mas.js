@@ -3,10 +3,10 @@
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el, fmtNum, loadingNode } = window.H;
 
   V.mas = {
     mount(root) {
+      const { el, fmtNum, loadingNode } = window.H;
       let stream = null;
       let selectedSid = localStorage.getItem("agcl.mas.sid") || "";
       let mdEnabled = (localStorage.getItem("agcl.mas.md") ?? "1") === "1";

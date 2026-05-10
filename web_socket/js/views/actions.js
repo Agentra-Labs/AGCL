@@ -4,10 +4,10 @@
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el, fmtNum, fmtUsd, loadingNode } = window.H;
 
   V.actions = {
     mount(root) {
+      const { el, fmtNum, fmtUsd, loadingNode } = window.H;
       const view = {
         unmount() {},
         async refresh() { await loadStrict(); },
