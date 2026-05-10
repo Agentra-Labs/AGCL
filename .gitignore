@@ -36,3 +36,25 @@ htmlcov/
 
 # Logs / runtime
 *.log
+
+# AGCL-specific runtime state (kept from the pre-rebase ignore list)
+# Note: gitignore patterns can't have inline trailing comments, so
+# each entry is on its own line with a comment block above it.
+
+# legacy venv path used by some contributors (alongside .venv/ above)
+env/
+
+# session state, trained-topic checkpoints, mini-trainer artifacts
+.agent_state/
+
+# downloaded GGUF / HF weights — too large for git
+models/
+
+# claude-code agent settings, machine-local
+.claude/
+
+# default config-bundle export target
+agcl-config.json
+
+# generated Docker / K8s / GCP artifacts (not source)
+deploy/
