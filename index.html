@@ -23,6 +23,7 @@
     <symbol id="i-diag" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor"/><line x1="8" y1="8" x2="11" y2="5" stroke="currentColor"/><line x1="8" y1="8" x2="8" y2="3" stroke="currentColor"/></symbol>
     <symbol id="i-deploy" viewBox="0 0 16 16"><polyline points="2,10 8,14 14,10" fill="none" stroke="currentColor"/><polyline points="2,7 8,11 14,7" fill="none" stroke="currentColor"/><polyline points="2,4 8,8 14,4" fill="none" stroke="currentColor"/></symbol>
     <symbol id="i-actions" viewBox="0 0 16 16"><polygon points="3,2 13,8 3,14" fill="none" stroke="currentColor"/><line x1="11" y1="6" x2="11" y2="10" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-setup" viewBox="0 0 16 16"><polyline points="2,4 8,8 14,4" fill="none" stroke="currentColor"/><polyline points="2,8 8,12 14,8" fill="none" stroke="currentColor"/><line x1="8" y1="8" x2="8" y2="14" stroke="currentColor"/></symbol>
     <symbol id="i-power" viewBox="0 0 16 16"><path d="M5 3 a6 6 0 1 0 6 0" fill="none" stroke="currentColor"/><line x1="8" y1="1" x2="8" y2="8" stroke="currentColor"/></symbol>
     <symbol id="i-x" viewBox="0 0 16 16"><line x1="3" y1="3" x2="13" y2="13" stroke="currentColor"/><line x1="13" y1="3" x2="3" y2="13" stroke="currentColor"/></symbol>
     <symbol id="i-check" viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
@@ -65,6 +66,7 @@
 
   <nav class="nav" id="nav">
     <a data-view="overview" class="active"><svg class="ico"><use href="#i-overview"/></svg>Overview</a>
+    <a data-view="setup"><svg class="ico"><use href="#i-setup"/></svg>Setup</a>
     <a data-view="chat"><svg class="ico"><use href="#i-chat"/></svg>Chat</a>
     <a data-view="mas"><svg class="ico"><use href="#i-mas"/></svg>Recursive MAS</a>
     <a data-view="topics"><svg class="ico"><use href="#i-topics"/></svg>Topics</a>
@@ -115,6 +117,7 @@
 <script src="web_socket/js/app.js"></script>
 <!-- views register themselves on window.Views; loaded AFTER core libs -->
 <script src="web_socket/js/views/overview.js"></script>
+<script src="web_socket/js/views/setup.js"></script>
 <script src="web_socket/js/views/chat.js"></script>
 <script src="web_socket/js/views/mas.js"></script>
 <script src="web_socket/js/views/topics.js"></script>

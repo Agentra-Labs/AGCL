@@ -11,6 +11,7 @@
 
   const VIEW_TITLES = {
     overview: "Overview",
+    setup: "Setup",
     chat: "Chat",
     mas: "Recursive MAS",
     topics: "Topics",

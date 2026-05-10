@@ -1019,4 +1019,12 @@ def build_node_app(auth_key: Optional[str] = None,
     except Exception as e:
         print(f"[node] toolkit router unavailable: {type(e).__name__}: {e}")
 
+    # Setup router (/node/setup/*) — autoconfig wizard, chat quick-setup,
+    # HF + GGUF downloaders, model registry, job manager.
+    try:
+        from agcl.setup_endpoints import make_setup_router
+        base_app.include_router(make_setup_router())
+    except Exception as e:
+        print(f"[node] setup router unavailable: {type(e).__name__}: {e}")
+
     return base_app

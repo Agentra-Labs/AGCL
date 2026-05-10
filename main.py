@@ -628,6 +628,38 @@ def main():
     ap_auto.add_argument("--download", action="store_true",
         help="pre-download the canonical HF models (~3 GB)")
 
+    # `download` — model fetcher for the chat / MAS local prefix path
+    dl_p = sub.add_parser("download",
+        help="download a model (hf snapshot or single gguf file)")
+    dl_p.add_argument("kind", choices=["hf", "gguf"],
+        help="hf = HuggingFace snapshot; gguf = single .gguf file")
+    dl_p.add_argument("source",
+        help="for hf: 'owner/repo'; for gguf: URL or 'owner/repo:filename.gguf'")
+    dl_p.add_argument("filename", nargs="?", default=None,
+        help="(gguf only, optional) filename within the HF repo")
+    dl_p.add_argument("--dest", default=None,
+        help="destination directory (default: models/hf_local/<slug>/ or models/)")
+    dl_p.add_argument("--revision", default=None,
+        help="(hf only) git revision / branch / tag")
+
+    # `setup-chat` — patch .env with chat-section defaults
+    sc_p = sub.add_parser("setup-chat",
+        help="patch .env with LOCAL_MODEL_PATH / DEFAULT_CLOUD / etc. (idempotent)")
+    sc_p.add_argument("--local-model", default=None,
+        help="path to a .gguf local prefix model")
+    sc_p.add_argument("--cloud", default=None, choices=["claude", "openai"],
+        help="default cloud provider")
+    sc_p.add_argument("--prefix-words", type=int, default=None,
+        help="number of words the local model emits before handoff (1..32)")
+    sc_p.add_argument("--prompt-format", default=None, choices=["chatml", "plain"],
+        help="prompt formatting for the local model")
+
+    # `setup-list` — show locally cached models
+    sl_p = sub.add_parser("setup-list",
+        help="show locally cached HF + GGUF models")
+    sl_p.add_argument("--registry", action="store_true",
+        help="also print the recommended-models registry")
+
     # also accept chat flags at the top level so `python main.py --session x` still works
     ap.add_argument("--session",  default="default")
     ap.add_argument("--provider", default=None, choices=["openai", "claude"])
@@ -660,6 +692,61 @@ def main():
         sys.exit(run_autoconfig(
             force=args.force, install_deps=args.install_deps, download=args.download,
         ))
+    elif args.cmd == "download":
+        from agcl import setup as S
+        try:
+            if args.kind == "hf":
+                res = S.download_hf_snapshot(repo_id=args.source, dest=args.dest,
+                                             revision=args.revision)
+            else:
+                res = S.download_gguf(source=args.source, filename=args.filename,
+                                      dest=args.dest)
+            print(f"saved -> {res.get('path')}")
+            print(f"size  -> {res.get('size_human')} ({res.get('size_bytes')} bytes)")
+            sys.exit(0)
+        except Exception as e:
+            print(f"download failed: {type(e).__name__}: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.cmd == "setup-chat":
+        from agcl import setup as S
+        try:
+            res = S.auto_chat(
+                local_model_path=args.local_model,
+                default_cloud=args.cloud,
+                prefix_word_count=args.prefix_words,
+                prompt_format=args.prompt_format,
+            )
+        except ValueError as e:
+            print(f"setup-chat: {e}", file=sys.stderr); sys.exit(2)
+        if res.get("note"):
+            print(res["note"])
+        for k in res.get("applied", []):
+            print(f"applied  {k}={res['values'][k]}")
+        for w in res.get("warnings", []):
+            print(f"warning  {w}", file=sys.stderr)
+        sys.exit(0)
+    elif args.cmd == "setup-list":
+        from agcl import setup as S
+        inv = S.list_local_models()
+        print("== GGUF ==")
+        if not inv["gguf"]:
+            print("  (none)")
+        for m in inv["gguf"]:
+            print(f"  {m['size_human']:>10}  {m['path']}")
+        print("== HF snapshots ==")
+        if not inv["hf"]:
+            print("  (none)")
+        for m in inv["hf"]:
+            print(f"  {m['size_human']:>10}  {m['name']:<50}  {m['source']}")
+        if getattr(args, "registry", False):
+            reg = S.model_registry()
+            print("\n== Recommended GGUF (local chat) ==")
+            for m in reg["local_chat_gguf"]:
+                print(f"  {m['size_human']:>10}  {m['source']}:{m['filename']}  -- {m['use']}")
+            print("\n== Recommended HF (MAS) ==")
+            for m in reg["mas_hf"]:
+                print(f"  {m['size_human']:>10}  {m['repo_id']}  -- {m['use']}")
+        sys.exit(0)
     elif args.cmd == "chat":
         _run_cli(args)
     elif args.cmd == "mini":
