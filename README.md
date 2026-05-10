@@ -152,6 +152,20 @@ extras work the same:
 uv pip install 'redis[hiredis]' aioboto3 litellm fastmcp discord.py
 ```
 
+### Verify the install
+
+The repo also ships a `pyproject.toml` so it installs as a normal
+Python package + console script:
+
+```bash
+uv sync --extra dev          # or:  pip install -e ".[dev]"
+uv run agcl --version        # -> 0.1.0
+uv run pytest                # tests/test_package.py + any tests you add
+```
+
+`uv run agcl …` and `python main.py …` are equivalent — both call the
+same `main()` dispatcher; pick whichever feels more natural.
+
 ### Optional: RecursiveMAS one-shot setup
 
 ```bash
