@@ -4,8 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>AGCL Console</title>
-<link rel="icon" type="image/png" href="assets/icon.png" />
-<link rel="stylesheet" href="styles.css" />
+<link rel="icon" type="image/png" href="web_socket/assets/icon.png" />
+<link rel="stylesheet" href="web_socket/styles.css" />
 </head>
 <body>
 
@@ -22,6 +22,7 @@
     <symbol id="i-plugins" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" fill="none" stroke="currentColor"/><line x1="6" y1="1" x2="6" y2="3" stroke="currentColor"/><line x1="10" y1="1" x2="10" y2="3" stroke="currentColor"/><line x1="6" y1="13" x2="6" y2="15" stroke="currentColor"/><line x1="10" y1="13" x2="10" y2="15" stroke="currentColor"/></symbol>
     <symbol id="i-diag" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor"/><line x1="8" y1="8" x2="11" y2="5" stroke="currentColor"/><line x1="8" y1="8" x2="8" y2="3" stroke="currentColor"/></symbol>
     <symbol id="i-deploy" viewBox="0 0 16 16"><polyline points="2,10 8,14 14,10" fill="none" stroke="currentColor"/><polyline points="2,7 8,11 14,7" fill="none" stroke="currentColor"/><polyline points="2,4 8,8 14,4" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-actions" viewBox="0 0 16 16"><polygon points="3,2 13,8 3,14" fill="none" stroke="currentColor"/><line x1="11" y1="6" x2="11" y2="10" stroke="currentColor" stroke-width="1.5"/></symbol>
     <symbol id="i-power" viewBox="0 0 16 16"><path d="M5 3 a6 6 0 1 0 6 0" fill="none" stroke="currentColor"/><line x1="8" y1="1" x2="8" y2="8" stroke="currentColor"/></symbol>
     <symbol id="i-x" viewBox="0 0 16 16"><line x1="3" y1="3" x2="13" y2="13" stroke="currentColor"/><line x1="13" y1="3" x2="3" y2="13" stroke="currentColor"/></symbol>
     <symbol id="i-check" viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
@@ -33,7 +34,7 @@
 </svg>
 
 <div id="auth" class="auth-pad" hidden>
-  <img src="assets/icon.png" alt="" class="auth-logo" />
+  <img src="web_socket/assets/icon.png" alt="" class="auth-logo" />
   <h2>AGCL Console</h2>
   <p class="small">Connect to a local AGCL node. Run
     <code>python main.py node --port 9876 --cors "*"</code> on the host
@@ -48,14 +49,14 @@
   </form>
   <p class="small auth-err" id="auth-err"></p>
   <p class="small dim">No CORS? Browser blocking mixed content? See
-    <a href="README.md">README.md</a>.</p>
+    <a href="docs/web-console.md">docs/web-console.md</a>.</p>
 </div>
 
 <div id="app" hidden>
 
 <aside class="sidebar">
   <div class="brand">
-    <img src="assets/icon.png" alt="" class="brand-logo" />
+    <img src="web_socket/assets/icon.png" alt="" class="brand-logo" />
     <div>
       <div class="brand-title">AGCL</div>
       <div class="brand-sub">Console</div>
@@ -73,7 +74,8 @@
     <a data-view="toolkit"><svg class="ico"><use href="#i-toolkit"/></svg>Toolkit</a>
     <a data-view="plugins"><svg class="ico"><use href="#i-plugins"/></svg>Plugins</a>
     <a data-view="diagnostics"><svg class="ico"><use href="#i-diag"/></svg>Diagnostics</a>
-    <a data-view="deploy"><svg class="ico"><use href="#i-deploy"/></svg>Deploy Manifests</a>
+    <a data-view="actions"><svg class="ico"><use href="#i-actions"/></svg>CLI Actions</a>
+    <a data-view="deploy"><svg class="ico"><use href="#i-deploy"/></svg>Deploy</a>
   </nav>
 
   <div class="conn-pill">
@@ -105,18 +107,21 @@
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/views/overview.js"></script>
-<script src="js/views/chat.js"></script>
-<script src="js/views/mas.js"></script>
-<script src="js/views/topics.js"></script>
-<script src="js/views/mini.js"></script>
-<script src="js/views/usage.js"></script>
-<script src="js/views/config.js"></script>
-<script src="js/views/toolkit.js"></script>
-<script src="js/views/plugins.js"></script>
-<script src="js/views/diagnostics.js"></script>
-<script src="js/views/deploy.js"></script>
-<script src="js/app.js"></script>
+<script src="web_socket/js/lib/markdown.js"></script>
+<script src="web_socket/js/lib/charts.js"></script>
+<script src="web_socket/js/api.js"></script>
+<script src="web_socket/js/views/overview.js"></script>
+<script src="web_socket/js/views/chat.js"></script>
+<script src="web_socket/js/views/mas.js"></script>
+<script src="web_socket/js/views/topics.js"></script>
+<script src="web_socket/js/views/mini.js"></script>
+<script src="web_socket/js/views/usage.js"></script>
+<script src="web_socket/js/views/config.js"></script>
+<script src="web_socket/js/views/toolkit.js"></script>
+<script src="web_socket/js/views/plugins.js"></script>
+<script src="web_socket/js/views/diagnostics.js"></script>
+<script src="web_socket/js/views/actions.js"></script>
+<script src="web_socket/js/views/deploy.js"></script>
+<script src="web_socket/js/app.js"></script>
 </body>
 </html>

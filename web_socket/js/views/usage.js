@@ -1,5 +1,5 @@
 /* Usage & Cost — per-provider stats, sessions, quota editor, custom providers,
- * timeseries chart. */
+ * timeseries chart with line + bar + donut. */
 
 (function () {
   const V = window.Views = window.Views || {};
@@ -13,20 +13,32 @@
       };
 
       root.appendChild(el("section", { class: "block" }, [
-        el("h2", null, "Per-provider summary"),
-        el("div", { id: "u-providers", class: "grid" }, [loadingNode()]),
+        el("h2", null, "Provider summary"),
+        el("div", { class: "split-2" }, [
+          el("div", { id: "u-providers", class: "grid", style: "grid-template-columns:repeat(auto-fill, minmax(220px, 1fr))" }, [loadingNode()]),
+          el("div", { class: "card" }, [
+            el("h3", null, "Token share by provider"),
+            el("div", { id: "u-donut", style: "display:flex;gap:14px;align-items:center;flex-wrap:wrap" }),
+          ]),
+        ]),
       ]));
 
       root.appendChild(el("section", { class: "block" }, [
-        el("h2", null, "Token timeseries (last hour)"),
+        el("h2", null, "Token timeseries"),
         el("div", { class: "row", style: "margin-bottom:8px" }, [
           el("label", { class: "small" }, "Bucket sec"),
           el("input", { type: "number", id: "ts-bucket", value: 60, min: 10, max: 3600, style: "width:80px" }),
           el("label", { class: "small" }, "Lookback sec"),
           el("input", { type: "number", id: "ts-lookback", value: 3600, min: 60, max: 86400, style: "width:100px" }),
+          el("label", { class: "small" }, "Style"),
+          el("select", { id: "ts-style" }, [
+            el("option", { value: "line" }, "line"),
+            el("option", { value: "bar" }, "bars"),
+          ]),
           el("button", { class: "btn-ghost", onClick: loadTimeseries }, "Update"),
         ]),
         el("div", { id: "u-ts", class: "card" }, loadingNode()),
+        el("div", { id: "u-ts-cost", class: "card", style: "margin-top:10px" }, loadingNode()),
       ]));
 
       root.appendChild(el("section", { class: "block" }, [
@@ -81,7 +93,9 @@
 
       async function loadProviders() {
         const wrap = document.getElementById("u-providers");
+        const donut = document.getElementById("u-donut");
         wrap.innerHTML = "";
+        donut.innerHTML = "";
         try {
           const sum = await API.get("/node/usage/summary");
           const pp = sum.per_provider || {};
@@ -90,8 +104,11 @@
             wrap.appendChild(el("div", { class: "empty" }, "No usage recorded yet."));
             return;
           }
+          const slices = [];
           names.forEach(name => {
             const p = pp[name] || {};
+            const total = (Number(p.tokens_in) || 0) + (Number(p.tokens_out) || 0);
+            slices.push({ label: name, v: total });
             const card = el("div", { class: "card" }, [
               el("h3", null, name),
               row("model", p.model || "—"),
@@ -114,6 +131,9 @@
               row("cost",   fmtUsd(total.total_cost_usd)),
             ]));
           }
+
+          donut.appendChild(window.Chart.donut(slices, { size: 160, label: "tokens" }));
+          donut.appendChild(window.Chart.donutLegend(slices));
         } catch (e) { UI.err(e); }
       }
 
@@ -207,50 +227,39 @@
       }
 
       async function loadTimeseries() {
-        const wrap = document.getElementById("u-ts");
-        wrap.innerHTML = "";
+        const tokWrap = document.getElementById("u-ts");
+        const costWrap = document.getElementById("u-ts-cost");
+        tokWrap.innerHTML = ""; costWrap.innerHTML = "";
         try {
           const bucket = Number(document.getElementById("ts-bucket").value) || 60;
           const lookback = Number(document.getElementById("ts-lookback").value) || 3600;
+          const style = document.getElementById("ts-style").value;
           const res = await API.get(`/node/usage/timeseries?bucket_sec=${bucket}&lookback_sec=${lookback}`);
           const buckets = res.buckets || [];
           if (!buckets.length) {
-            wrap.appendChild(el("div", { class: "small dim" }, "No data in window."));
+            tokWrap.appendChild(el("div", { class: "small dim" }, "No data in window."));
+            costWrap.appendChild(el("div", { class: "small dim" }, "No cost data in window."));
             return;
           }
-          wrap.appendChild(svgBars(buckets));
-        } catch (e) { UI.err(e); }
-      }
+          const tokens = buckets.map(b => ({
+            v: Number(b.tokens) || 0,
+            label: b.timestamp ? new Date(b.timestamp * 1000).toLocaleTimeString() : "",
+          }));
+          const costs = buckets.map(b => ({
+            v: Number(b.cost) || 0,
+            label: b.timestamp ? new Date(b.timestamp * 1000).toLocaleTimeString() : "",
+          }));
 
-      function svgBars(buckets) {
-        const W = 800, H = 160, P = 24;
-        const ns = "http://www.w3.org/2000/svg";
-        const svg = document.createElementNS(ns, "svg");
-        svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-        svg.setAttribute("width", "100%");
-        const max = Math.max(1, ...buckets.map(b => Number(b.tokens) || 0));
-        const bw = (W - 2*P) / buckets.length;
-        // baseline
-        const ax = document.createElementNS(ns, "line");
-        ax.setAttribute("x1", P); ax.setAttribute("x2", W-P);
-        ax.setAttribute("y1", H-P); ax.setAttribute("y2", H-P);
-        ax.setAttribute("class", "axis");
-        svg.appendChild(ax);
-        buckets.forEach((b, i) => {
-          const v = Number(b.tokens) || 0;
-          const h = ((H - 2*P) * v) / max;
-          const r = document.createElementNS(ns, "rect");
-          r.setAttribute("x", P + i*bw + 1);
-          r.setAttribute("y", H - P - h);
-          r.setAttribute("width", Math.max(1, bw - 2));
-          r.setAttribute("height", h);
-          r.setAttribute("class", "bar");
-          const t = document.createElementNS(ns, "title");
-          t.textContent = `${new Date((b.timestamp||0)*1000).toLocaleTimeString()} — ${v} tok ${b.cost ? "$"+b.cost.toFixed(4) : ""}`;
-          r.appendChild(t);
-          svg.appendChild(r);
-        });
-        return svg;
+          tokWrap.appendChild(el("div", { class: "small dim", style: "margin-bottom:4px" }, "Tokens per bucket"));
+          tokWrap.appendChild(style === "line"
+            ? window.Chart.line(tokens.map(d => d.v), { height: 200 })
+            : window.Chart.bars(tokens, { height: 200 }));
+
+          costWrap.appendChild(el("div", { class: "small dim", style: "margin-bottom:4px" }, "Estimated cost (USD) per bucket"));
+          costWrap.appendChild(style === "line"
+            ? window.Chart.line(costs.map(d => d.v), { height: 160 })
+            : window.Chart.bars(costs, { height: 160 }));
+        } catch (e) { UI.err(e); }
       }
 
       function row(k, v) {

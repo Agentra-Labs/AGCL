@@ -1,4 +1,5 @@
-/* Overview — system snapshot, runtime info, MAS config, local model. */
+/* Overview — system snapshot, runtime, MAS topology, local model, GPUs,
+ * plus a quick-glance token chart. */
 
 (function () {
   const V = window.Views = window.Views || {};
@@ -15,11 +16,16 @@
         el("span", { class: "small dim" }, "Live snapshot of the connected node — what it knows about itself."),
       ]));
 
-      const grid = el("div", { class: "grid", id: "ov-grid" });
-      root.appendChild(grid);
-      grid.appendChild(loadingNode("loading system info…"));
+      root.appendChild(el("div", { class: "split-2" }, [
+        el("div", { id: "ov-grid", class: "grid", style: "grid-template-columns:repeat(auto-fill, minmax(220px, 1fr))" }, [loadingNode("loading system info…")]),
+        el("div", { class: "card" }, [
+          el("h3", null, "Token usage at a glance"),
+          el("div", { id: "ov-share", style: "display:flex;gap:14px;align-items:center;flex-wrap:wrap" }),
+          el("div", { id: "ov-spark", style: "margin-top:10px" }),
+        ]),
+      ]));
 
-      const masSec = el("section", { class: "block" }, [
+      const masSec = el("section", { class: "block", style: "margin-top:18px" }, [
         el("h2", null, "Multi-Agent Configuration"),
         el("div", { id: "ov-mas" }, loadingNode()),
       ]);
@@ -39,12 +45,15 @@
 
       async function load() {
         try {
-          const [info, runtime] = await Promise.all([
+          const [info, runtime, summary, ts] = await Promise.all([
             API.get("/node/info"),
             API.get("/node/runtime/info").catch(() => null),
+            API.get("/node/usage/summary").catch(() => null),
+            API.get("/node/usage/timeseries?bucket_sec=300&lookback_sec=21600").catch(() => null),
           ]);
           renderInfo(info);
           renderRuntime(runtime);
+          renderUsageGlance(summary, ts);
           UI.tick();
         } catch (e) { UI.err(e); }
       }
@@ -54,7 +63,6 @@
         g.innerHTML = "";
         const platform = info.platform || {};
         const mas = info.mas || {};
-        const lm = info.local_model || {};
 
         g.appendChild(card("Service", [
           ["service", info.service],
@@ -103,6 +111,7 @@
         }
 
         // Local model
+        const lm = info.local_model || {};
         const lmEl = document.getElementById("ov-lm");
         lmEl.innerHTML = "";
         const lmRows = [
@@ -113,7 +122,7 @@
           ["threads", lm.n_threads],
           ["loaded", lm.loaded ? badge("ok", "yes") : badge("dim", "lazy")],
         ];
-        lmEl.appendChild(card("Local model", lmRows, true));
+        lmEl.appendChild(card("Local model", lmRows));
       }
 
       function renderRuntime(rt) {
@@ -123,7 +132,7 @@
           r.appendChild(el("div", { class: "empty" }, "Runtime endpoint not available."));
           return;
         }
-        const grid = el("div", { class: "grid" });
+        const grid = el("div", { class: "grid", style: "grid-template-columns:repeat(auto-fill, minmax(220px, 1fr))" });
         grid.appendChild(card("Process", [
           ["python", rt.python || "—"],
           ["platform", rt.platform || "—"],
@@ -162,8 +171,35 @@
         }
       }
 
-      function card(title, rows, full) {
-        const c = el("div", { class: "card" + (full ? "" : "") }, [el("h3", { text: title })]);
+      function renderUsageGlance(summary, ts) {
+        const share = document.getElementById("ov-share");
+        const spark = document.getElementById("ov-spark");
+        share.innerHTML = ""; spark.innerHTML = "";
+        if (!summary) {
+          share.appendChild(el("div", { class: "small dim" }, "usage summary unavailable"));
+        } else {
+          const pp = summary.per_provider || {};
+          const slices = Object.keys(pp).map(k => ({
+            label: k,
+            v: (Number(pp[k].tokens_in) || 0) + (Number(pp[k].tokens_out) || 0),
+          })).filter(s => s.v > 0);
+          if (slices.length) {
+            share.appendChild(window.Chart.donut(slices, { size: 130, label: "tokens" }));
+            share.appendChild(window.Chart.donutLegend(slices));
+          } else {
+            share.appendChild(el("div", { class: "small dim" }, "no token usage yet"));
+          }
+        }
+        if (ts && ts.buckets && ts.buckets.length > 1) {
+          const vals = ts.buckets.map(b => Number(b.tokens) || 0);
+          spark.appendChild(el("div", { class: "small dim", style: "margin-bottom:4px" },
+            `${ts.lookback_sec ? Math.round(ts.lookback_sec/60) + "m" : "?"} window · ${vals.length} buckets`));
+          spark.appendChild(window.Chart.line(vals, { height: 110, padding: 18 }));
+        }
+      }
+
+      function card(title, rows) {
+        const c = el("div", { class: "card" }, [el("h3", { text: title })]);
         rows.forEach(([k, v]) => {
           const valNode = (v && v.nodeType) ? v : document.createTextNode(v == null ? "—" : String(v));
           c.appendChild(el("div", { class: "row kv" }, [

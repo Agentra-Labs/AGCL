@@ -1,15 +1,27 @@
-/* Deploy Manifests — Docker / Kubernetes / GCP Cloud Run. */
+/* Deploy Manifests — Docker / Kubernetes / GCP Cloud Run.
+ *
+ * Refresh re-emits the last manifest you generated, useful when toggles
+ * change and you want a quick re-run. */
 
 (function () {
   const V = window.Views = window.Views || {};
-  const { el, loadingNode } = window.H;
+  const { el } = window.H;
 
   V.deploy = {
     mount(root) {
-      const view = { unmount() {}, refresh() {} };
+      let lastKind = null;
+
+      const view = {
+        unmount() {},
+        async refresh() {
+          if (lastKind) await emit(lastKind);
+          else UI.toast("Pick a target first.");
+        },
+      };
 
       root.appendChild(el("p", { class: "small" },
-        "Generate deployment manifests directly from the running node. Output is JSON describing files / chart / deploy command — copy and run on the target host."));
+        "Generate deployment manifests directly from the running node. Output is a JSON-encoded manifest set — copy and apply on the target host. The same logic ships in the CLI as ",
+        el("code", null, "agcl toolkit emit-{docker,k8s,gcp}"), "."));
 
       root.appendChild(el("section", { class: "block" }, [
         el("h2", null, "Common options"),
@@ -28,14 +40,19 @@
             el("button", { onClick: () => emit("docker") }, "Emit Docker"),
             el("button", { onClick: () => emit("k8s") },    "Emit Kubernetes"),
             el("button", { onClick: () => emit("gcp") },    "Emit Cloud Run (GCP)"),
+            el("span", { class: "spacer" }),
             el("button", { class: "btn-ghost", onClick: () => copyOut() }, "Copy output"),
+            el("button", { class: "btn-ghost", onClick: () => downloadOut() }, "Download .json"),
           ]),
         ]),
       ]));
 
       root.appendChild(el("section", { class: "block" }, [
-        el("h2", null, "Output"),
-        el("pre", { id: "dep-out-pre", class: "card mono small", style: "white-space:pre-wrap;max-height:60vh;overflow:auto" }),
+        el("h2", null, [
+          "Output ",
+          el("span", { id: "dep-kind", class: "pill dim" }, "—"),
+        ]),
+        el("pre", { id: "dep-out-pre", class: "card mono small", style: "white-space:pre-wrap;max-height:60vh;overflow:auto;background:var(--bg)" }),
       ]));
 
       function toggle(id, label) {
@@ -58,12 +75,16 @@
       }
 
       async function emit(kind) {
+        lastKind = kind;
         const out = document.getElementById("dep-out-pre");
+        const lbl = document.getElementById("dep-kind");
+        lbl.textContent = kind;
+        lbl.classList.remove("dim");
         out.textContent = "generating…";
         try {
           const res = await API.post(`/node/toolkit/manifest/${kind}`, buildBody());
           out.textContent = JSON.stringify(res, null, 2);
-          UI.ok("Manifests generated.");
+          UI.ok(kind + " manifests generated.");
         } catch (e) { out.textContent = ""; UI.err(e); }
       }
 
@@ -71,6 +92,16 @@
         const t = document.getElementById("dep-out-pre").textContent || "";
         if (!t) return;
         navigator.clipboard.writeText(t).then(() => UI.ok("Copied."), () => UI.err(new Error("Copy failed")));
+      }
+
+      function downloadOut() {
+        const t = document.getElementById("dep-out-pre").textContent || "";
+        if (!t || !lastKind) { UI.err(new Error("Nothing to download.")); return; }
+        const blob = new Blob([t], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `agcl-${lastKind}-manifest.json`;
+        a.click();
       }
 
       return view;

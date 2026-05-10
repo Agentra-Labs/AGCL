@@ -26,13 +26,17 @@ python main.py node --bind 127.0.0.1 --port 9876 --cors "*"
 # the node prints a one-time bearer key — copy it
 
 # 2. serve the console (any of these works)
-python -m http.server 8088 --directory web_socket    # local
-# or just open web_socket/index.html in a browser
-# or push to GitHub Pages (see "Hosting" below)
+python -m http.server 8088 --directory .             # serve the repo root
+# or just open index.html in a browser
+# or push to GitHub Pages (see "Hosting" below) and visit your repo URL
 
 # 3. visit http://localhost:8088/, paste the host + bearer key,
 #    click Connect.
 ```
+
+`index.html` lives at the repo root; everything else (`styles.css`,
+`js/`, `assets/`) lives under `web_socket/`. Open the root entry point
+and the relative paths inside it pull from `web_socket/`.
 
 ---
 
@@ -40,9 +44,9 @@ python -m http.server 8088 --directory web_socket    # local
 
 | Method                    | When to use                                                                 | URL                                                          |
 |---------------------------|-----------------------------------------------------------------------------|--------------------------------------------------------------|
-| **Open `index.html`**     | One-off, single user                                                        | `file://…/web_socket/index.html`                             |
-| **Local static server**   | Local hacking, multiple browsers                                            | `python -m http.server 8088 --directory web_socket`          |
-| **GitHub Pages**          | Sharing — the repo's `/web_socket/` becomes a public site that talks to *each visitor's own local node* | `https://<user>.github.io/<repo>/web_socket/`                |
+| **Open `index.html`**     | One-off, single user                                                        | `file://…/index.html`                                        |
+| **Local static server**   | Local hacking, multiple browsers                                            | `python -m http.server 8088 --directory .`                   |
+| **GitHub Pages**          | Sharing — the repo root becomes the published site that talks to *each visitor's own local node* | `https://<user>.github.io/<repo>/`                            |
 
 GitHub Pages is fine because the console is purely client-side — there
 is no server-side secret. Each visitor pastes the bearer key for
@@ -79,7 +83,8 @@ in the sidebar clears them.
 | Configuration  | Curated config tree (cloud, local model, MAS, storage). Env editor with allowlist + persist toggles. mas.json upload. Bundle export / import. | `GET/PATCH /node/config`, `GET/PATCH /node/config/env`, `GET/PUT /node/config/mas`, `GET /node/config/all`, `POST /node/config/import`                                                                                                                                                       |
 | Toolkit        | Adapter discovery / ping (LiteLLM / Ollama / vLLM / Redis / S3 / Cloudflare / WebRTC / GCP). Chat through gateway. Distributed state. Checkpoint store. | `GET /node/toolkit/{discover,checkpoints}`, `GET /node/toolkit/ping/{adapter}`, `POST /node/toolkit/chat`, `PUT/GET/DELETE /node/toolkit/{state,checkpoint}/...`                                                                                                                              |
 | Plugins        | Discovered plugins / commands / tools, hot-reload                                                      | `GET /node/plugins`, `POST /node/plugins/reload`                                                                                                                                                                                                                                              |
-| Diagnostics    | `/health`, `/pressure`, `/patterns` with a 24-hour active-hours bar, auto-refresh                      | `GET /health`, `GET /pressure`, `GET /patterns`                                                                                                                                                                                                                                              |
+| Diagnostics    | Pressure gauge, latency curve, active-hours bar, auto-refresh                                          | `GET /health`, `GET /pressure`, `GET /patterns`                                                                                                                                                                                                                                              |
+| CLI Actions    | One-click flows that orchestrate existing endpoints: full snapshot, ping every adapter, cloud smoke test, strict-mode toggle, bundle export, flush-and-rebuild, remote node probe | All existing endpoints (no new server-side surface)                                                                                                                                                                                                                                          |
 | Deploy         | Generate Docker / Kubernetes / GCP Cloud Run manifests                                                 | `POST /node/toolkit/manifest/{docker,k8s,gcp}`                                                                                                                                                                                                                                                |
 
 Every toggle / button in the UI corresponds to one or more endpoints —
@@ -142,8 +147,8 @@ just needs to be in the node's CORS allowlist.
 ## File layout
 
 ```
+index.html                # entry point — lives at repo root
 web_socket/
-  index.html              # shell + inline SVG icon sprite (no emojis)
   styles.css              # monochrome dark/light theme, monospace
   README.md               # short hosting note (most info is here)
   assets/
@@ -152,17 +157,21 @@ web_socket/
   js/
     api.js                # fetch + SSE wrapper, bearer auth, localStorage
     app.js                # router, sidebar nav, connection panel, toast
+    lib/
+      markdown.js         # minimal Markdown renderer (no deps)
+      charts.js           # SVG charts: line, bar, sparkline, donut, heatmap, gauge
     views/
-      overview.js         # system info, MAS, local model, GPUs
-      chat.js             # streaming chat (/node/chat/{sid})
-      mas.js              # recursive MAS run + stream + pause/resume/halt
+      overview.js         # system info, MAS, local model, GPUs, token donut
+      chat.js             # streaming chat with Markdown rendering
+      mas.js              # recursive MAS — run, stream, control, latent heatmap, loss curve
       topics.js           # trained-state checkpoints
-      mini.js             # background mini-model trainer
-      usage.js            # tokens, cost, quotas, custom providers
+      mini.js             # mini-model trainer with live loss + throughput curves
+      usage.js            # tokens, cost, quotas, custom providers, donut + bar/line charts
       config.js           # curated config, env editor, mas.json, bundles
-      toolkit.js          # adapter discover/ping, chat gateway, state
+      toolkit.js          # adapter discover/ping, chat gateway with Markdown, state
       plugins.js          # discovered plugins / commands / tools
-      diagnostics.js      # health, pressure, active-hours patterns
+      diagnostics.js      # pressure gauge, latency line, active-hours bar
+      actions.js          # CLI-parity one-click flows: snapshot, ping-all, smoke test, strict toggle
       deploy.js           # emit Docker / k8s / GCP manifests
 ```
 

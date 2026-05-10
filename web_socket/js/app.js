@@ -20,6 +20,7 @@
     toolkit: "Toolkit",
     plugins: "Plugins",
     diagnostics: "Diagnostics",
+    actions: "CLI Actions",
     deploy: "Deploy Manifests",
   };
 

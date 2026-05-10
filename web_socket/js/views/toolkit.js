@@ -41,7 +41,13 @@
             ]),
             el("button", { onClick: doChat }, "Send"),
           ]),
-          el("pre", { id: "tk-chat-out", class: "small mono", style: "white-space:pre-wrap;background:var(--bg);padding:10px;margin-top:10px;min-height:60px;border:1px solid var(--line)" }),
+          el("div", { class: "row", style: "margin-top:10px" }, [
+            el("label", { class: "toggle" }, [
+              el("input", { type: "checkbox", id: "tk-md", checked: "" }),
+              el("span", { class: "sw" }), "Render reply as Markdown",
+            ]),
+          ]),
+          el("div", { id: "tk-chat-out", class: "card md", style: "background:var(--bg);padding:10px;margin-top:10px;min-height:60px" }),
         ]),
       ]));
 
@@ -117,8 +123,10 @@
 
       async function doChat() {
         const out = document.getElementById("tk-chat-out");
-        out.textContent = "";
+        out.innerHTML = "";
+        out.dataset.raw = "";
         const stream = document.getElementById("tk-stream").checked;
+        const md = document.getElementById("tk-md").checked;
         const model = document.getElementById("tk-model").value.trim() || undefined;
         let messages;
         try { messages = JSON.parse(document.getElementById("tk-messages").value); }
@@ -129,20 +137,26 @@
           temperature: Number(document.getElementById("tk-temp").value),
           stream,
         };
+        const apply = (t) => {
+          out.dataset.raw = t;
+          if (md) { out.classList.add("md"); out.innerHTML = window.MD.render(t); }
+          else    { out.classList.remove("md"); out.style.whiteSpace = "pre-wrap"; out.textContent = t; }
+        };
         if (stream) {
+          let buf = "";
           API.sse("/node/toolkit/chat", body, {
             onEvent(ev) {
-              const txt = ev.delta || ev.text || ev.content || JSON.stringify(ev);
-              out.textContent += txt;
+              const txt = ev.delta || ev.text || ev.content || "";
+              if (typeof txt === "string") { buf += txt; apply(buf); }
             },
             onError(e) { UI.err(e); },
-            onDone() { out.textContent += "\n[done]"; },
+            onDone() { apply(buf + "\n\n_[done]_"); },
           });
         } else {
           try {
             const res = await API.post("/node/toolkit/chat", body);
             const reply = res.choices?.[0]?.message?.content || res.content || JSON.stringify(res, null, 2);
-            out.textContent = reply;
+            apply(reply);
           } catch (e) { UI.err(e); }
         }
       }

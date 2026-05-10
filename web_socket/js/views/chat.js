@@ -1,8 +1,8 @@
 /* Chat — streaming chat against /node/chat/{session_id}.
  *
- * Picks/creates a session, lists sessions, sends user message, renders
- * SSE events (prefix → chunk → done). Provider override + recovery_mode
- * exposed as toggles. */
+ * Renders assistant turns with Markdown, keeps the local prefix as a
+ * dim sidebar attached to the same logical message, exposes provider /
+ * recovery toggles, and supports cancel + copy. */
 
 (function () {
   const V = window.Views = window.Views || {};
@@ -12,6 +12,7 @@
     mount(root) {
       let currentSid = localStorage.getItem("agcl.chat.sid") || "default";
       let activeStream = null;
+      let mdEnabled = (localStorage.getItem("agcl.chat.md") ?? "1") === "1";
 
       const view = {
         unmount() { if (activeStream) { try { activeStream.abort(); } catch {} } },
@@ -19,7 +20,6 @@
       };
 
       const layout = el("div", { class: "split-2" }, [
-        // LEFT — sessions
         el("div", { class: "col" }, [
           el("section", { class: "block" }, [
             el("h2", null, "Sessions"),
@@ -30,7 +30,6 @@
             el("div", { id: "sess-list" }, loadingNode()),
           ]),
         ]),
-        // RIGHT — chat
         el("div", { class: "col" }, [
           el("section", { class: "block" }, [
             el("h2", null, [
@@ -47,8 +46,13 @@
               el("label", { class: "small" }, "Recovery"),
               el("select", { id: "chat-recovery" }, [
                 el("option", { value: "" }, "(none)"),
-                el("option", { value: "retry" }, "retry"),
-                el("option", { value: "fallback" }, "fallback"),
+                el("option", { value: "natural" }, "natural"),
+                el("option", { value: "humor" }, "humor"),
+                el("option", { value: "explicit" }, "explicit"),
+              ]),
+              el("label", { class: "toggle", title: "Render assistant turns as Markdown" }, [
+                el("input", { type: "checkbox", id: "chat-md", ...(mdEnabled ? { checked: "" } : {}) }),
+                el("span", { class: "sw" }), "Markdown",
               ]),
               el("span", { class: "spacer" }),
               el("button", { class: "btn-ghost", onClick: () => clearLog() }, "Clear log"),
@@ -57,7 +61,7 @@
             el("div", { class: "chat-wrap" }, [
               el("div", { class: "chat-log", id: "chat-log" }),
               el("div", { class: "chat-input" }, [
-                el("textarea", { id: "chat-input", placeholder: "Type a message. Cmd/Ctrl+Enter to send.", onKeydown: onKey }),
+                el("textarea", { id: "chat-input", placeholder: "Type a message. Cmd/Ctrl+Enter to send. Markdown supported.", onKeydown: onKey }),
                 el("button", { id: "chat-send", onClick: send }, "Send"),
                 el("button", { class: "btn-warn", id: "chat-cancel", onClick: cancel, hidden: true }, "Cancel"),
               ]),
@@ -66,6 +70,12 @@
         ]),
       ]);
       root.appendChild(layout);
+
+      document.getElementById("chat-md").addEventListener("change", e => {
+        mdEnabled = e.target.checked;
+        localStorage.setItem("agcl.chat.md", mdEnabled ? "1" : "0");
+        loadHistory();
+      });
 
       function onKey(e) {
         if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); }
@@ -103,7 +113,11 @@
         try {
           const data = await API.get("/node/sessions/" + encodeURIComponent(currentSid));
           (data.messages || []).forEach(m => {
-            appendMsg(m.role || "?", m.content || m.text || "", m.role === "assistant" ? "cloud" : "user");
+            const role = m.role || "?";
+            const txt = m.content ?? m.text ?? "";
+            const kind = role === "assistant" ? "cloud" : (role === "system" ? "local" : "user");
+            const bubble = appendMsg(role, "", kind);
+            setBody(bubble, txt, role === "assistant");
           });
           log.scrollTop = log.scrollHeight;
         } catch (e) {
@@ -114,12 +128,40 @@
       function appendMsg(who, text, kind) {
         const log = document.getElementById("chat-log");
         const m = el("div", { class: "chat-msg " + (kind || "user") }, [
-          el("div", { class: "who" }, who),
-          el("div", { class: "body", text: text }),
+          el("div", { class: "row", style: "justify-content:space-between;align-items:baseline" }, [
+            el("span", { class: "who" }, who),
+            el("button", { class: "btn-ghost", style: "padding:2px 6px;font-size:10px",
+              onClick: (e) => copyTextOf(e.currentTarget) }, "Copy"),
+          ]),
+          el("div", { class: "body" }, text || ""),
         ]);
         log.appendChild(m);
         log.scrollTop = log.scrollHeight;
         return m;
+      }
+
+      function setBody(bubble, text, asAssistant) {
+        const body = bubble.querySelector(".body");
+        body.dataset.raw = text;
+        if (asAssistant && mdEnabled) {
+          body.classList.add("md");
+          body.innerHTML = window.MD.render(text);
+        } else {
+          body.classList.remove("md");
+          body.textContent = text;
+        }
+      }
+
+      function appendChunk(bubble, text, asAssistant) {
+        const body = bubble.querySelector(".body");
+        const cur = (body.dataset.raw || "") + text;
+        setBody(bubble, cur, asAssistant);
+      }
+
+      function copyTextOf(btn) {
+        const bubble = btn.closest(".chat-msg");
+        const raw = bubble.querySelector(".body").dataset.raw || bubble.querySelector(".body").textContent || "";
+        navigator.clipboard.writeText(raw).then(() => UI.ok("Copied."), () => UI.err(new Error("Copy failed")));
       }
 
       function clearLog() { document.getElementById("chat-log").innerHTML = ""; }
@@ -162,14 +204,14 @@
         const msg = ta.value.trim();
         if (!msg) return;
         ta.value = "";
-        appendMsg("you", msg, "user");
+        const userBubble = appendMsg("you", "", "user");
+        setBody(userBubble, msg, mdEnabled);
+
         const provider = document.getElementById("chat-provider").value || undefined;
         const recovery = document.getElementById("chat-recovery").value || undefined;
 
         const localBubble = appendMsg("local prefix", "", "local");
         const cloudBubble = appendMsg("assistant", "", "cloud");
-        const localBody = localBubble.querySelector(".body");
-        const cloudBody = cloudBubble.querySelector(".body");
 
         document.getElementById("chat-send").disabled = true;
         document.getElementById("chat-cancel").hidden = false;
@@ -184,11 +226,16 @@
           {
             onEvent(ev) {
               if (ev.type === "prefix") {
-                localBody.textContent = ev.text || "";
+                const ms = ev.local_ms != null ? ` <span class="small dim">(${ev.local_ms}ms)</span>` : "";
+                localBubble.querySelector(".who").innerHTML = "local prefix" + ms;
+                setBody(localBubble, ev.text || "", false);
               } else if (ev.type === "chunk") {
-                cloudBody.textContent += ev.text || "";
+                appendChunk(cloudBubble, ev.text || "", true);
               } else if (ev.type === "done") {
-                if (ev.pressure) UI.toast("Pressure: " + JSON.stringify(ev.pressure));
+                if (ev.pressure && ev.pressure.rate_ratio != null) {
+                  const ratio = (ev.pressure.rate_ratio * 100).toFixed(0);
+                  cloudBubble.querySelector(".who").textContent = `assistant · pressure ${ratio}%`;
+                }
               }
             },
             onError(e) { UI.err(e); cancel(); },

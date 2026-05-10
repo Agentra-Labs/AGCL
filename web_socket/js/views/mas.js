@@ -1,5 +1,5 @@
 /* Recursive MAS — list sessions, run a turn (one-shot or streaming),
- * pause/resume/halt, latent inspection. */
+ * pause/resume/halt, latent inspection (rendered as a heatmap). */
 
 (function () {
   const V = window.Views = window.Views || {};
@@ -9,6 +9,8 @@
     mount(root) {
       let stream = null;
       let selectedSid = localStorage.getItem("agcl.mas.sid") || "";
+      let mdEnabled = (localStorage.getItem("agcl.mas.md") ?? "1") === "1";
+      const lossHistory = [];   // step -> {step, loss, stage} from streaming events
 
       const view = {
         unmount() { if (stream) { try { stream.abort(); } catch {} } },
@@ -26,7 +28,7 @@
                   el("input", { type: "text", id: "mas-sid", value: selectedSid }),
                 ]),
                 el("div", { class: "field" }, [
-                  el("label", null, "User message"),
+                  el("label", null, "User message (Markdown supported)"),
                   el("textarea", { id: "mas-msg", placeholder: "What should the agent reason about?" }),
                 ]),
                 el("div", { class: "row" }, [
@@ -34,6 +36,7 @@
                   toggle("mas-force-cloud", "Force cloud only", false),
                   toggle("mas-force-continue", "Local prefix + cloud", false),
                   toggle("mas-persist", "Persist topic", true),
+                  toggle("mas-md", "Render answer as Markdown", mdEnabled),
                 ]),
               ]),
               el("div", null, [
@@ -58,10 +61,23 @@
         el("section", { class: "block" }, [
           el("h2", null, "Live answer"),
           el("div", { class: "card" }, [
-            el("div", { id: "mas-answer", class: "mono", style: "white-space:pre-wrap;min-height:60px" }),
+            el("div", { id: "mas-answer", class: "md", style: "min-height:60px" }),
+            el("div", { class: "row", style: "margin-top:8px" }, [
+              el("button", { class: "btn-ghost", style: "padding:2px 8px;font-size:11px",
+                onClick: copyAnswer }, "Copy answer"),
+              el("span", { class: "small dim", id: "mas-meta" }, ""),
+            ]),
           ]),
-          el("h2", { style: "margin-top:14px" }, "Stream events"),
-          el("div", { id: "mas-events", class: "card", style: "max-height:280px;overflow:auto" }),
+          el("div", { class: "split-2", style: "margin-top:14px" }, [
+            el("div", null, [
+              el("h2", null, "Stream events"),
+              el("div", { id: "mas-events", class: "card", style: "max-height:280px;overflow:auto" }),
+            ]),
+            el("div", null, [
+              el("h2", null, "Training loss"),
+              el("div", { id: "mas-loss", class: "card" }, el("div", { class: "small dim" }, "loss curve will appear once streaming starts")),
+            ]),
+          ]),
         ]),
 
         el("section", { class: "block" }, [
@@ -87,10 +103,19 @@
               el("button", { class: "btn-ghost", onClick: ctlLatent }, "Latent snapshot"),
             ]),
             el("div", { id: "ctl-out", class: "small", style: "margin-top:8px" }),
+            el("div", { id: "ctl-latent", style: "margin-top:8px" }),
           ]),
         ]),
       ]);
       root.appendChild(layout);
+
+      document.getElementById("mas-md").addEventListener("change", e => {
+        mdEnabled = e.target.checked;
+        localStorage.setItem("agcl.mas.md", mdEnabled ? "1" : "0");
+        renderAnswer(currentAnswer);
+      });
+
+      let currentAnswer = "";
 
       function svg(id) {
         const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -104,8 +129,7 @@
       function toggle(id, label, checked) {
         return el("label", { class: "toggle" }, [
           el("input", { type: "checkbox", id, ...(checked ? { checked: "" } : {}) }),
-          el("span", { class: "sw" }),
-          label,
+          el("span", { class: "sw" }), label,
         ]);
       }
       function numField(id, label, value, min, max, step) {
@@ -142,12 +166,51 @@
 
       function setStatus(t) { document.getElementById("mas-status").textContent = t; }
 
+      function renderAnswer(text) {
+        currentAnswer = text || "";
+        const wrap = document.getElementById("mas-answer");
+        if (!currentAnswer) { wrap.innerHTML = ""; return; }
+        if (mdEnabled) {
+          wrap.classList.add("md");
+          wrap.innerHTML = window.MD.render(currentAnswer);
+        } else {
+          wrap.classList.remove("md");
+          wrap.style.whiteSpace = "pre-wrap";
+          wrap.textContent = currentAnswer;
+        }
+      }
+
+      function copyAnswer() {
+        if (!currentAnswer) return;
+        navigator.clipboard.writeText(currentAnswer).then(
+          () => UI.ok("Copied."),
+          () => UI.err(new Error("Copy failed"))
+        );
+      }
+
+      function renderLoss() {
+        const wrap = document.getElementById("mas-loss");
+        wrap.innerHTML = "";
+        if (!lossHistory.length) {
+          wrap.appendChild(el("div", { class: "small dim" }, "no training events yet"));
+          return;
+        }
+        const data = lossHistory.map(p => p.loss);
+        wrap.appendChild(window.Chart.line(data, { height: 180, label: "loss (per training step)" }));
+        const last = lossHistory[lossHistory.length - 1];
+        wrap.appendChild(el("div", { class: "small dim", style: "margin-top:6px" },
+          `${lossHistory.length} steps · last: stage=${last.stage ?? "?"} loss=${Number(last.loss).toFixed(4)}`));
+      }
+
       async function runTurn() {
         const body = buildBody();
         if (!body) return;
-        document.getElementById("mas-answer").textContent = "";
+        renderAnswer("");
+        document.getElementById("mas-meta").textContent = "";
         document.getElementById("mas-events").innerHTML = "";
         document.getElementById("btn-run").disabled = true;
+        lossHistory.length = 0;
+        renderLoss();
         setStatus("running…");
 
         if (getBool("mas-stream")) {
@@ -160,8 +223,9 @@
         } else {
           try {
             const res = await API.post("/node/mas/run", body);
-            document.getElementById("mas-answer").textContent = res.answer || "(empty)";
-            renderEvent({ event: "answer", text: res.answer, topic_id: res.topic_id, session_id: res.session_id });
+            renderAnswer(res.answer || "");
+            document.getElementById("mas-meta").textContent =
+              `topic=${res.topic_id || "—"} · session=${res.session_id || "—"}`;
             renderEvent({ event: "done" });
             UI.ok("Turn complete.");
           } catch (e) { UI.err(e); }
@@ -185,8 +249,9 @@
         const kind = ev.event || "evt";
         const summary = (() => {
           if (kind === "answer") return (ev.text || "").slice(0, 200);
-          if (kind === "training_step")
-            return `stage=${ev.stage} step=${ev.step} loss=${ev.loss != null ? Number(ev.loss).toFixed(4) : "—"}`;
+          if (kind === "training_step") {
+            return `stage=${ev.stage ?? "?"} step=${ev.step ?? "?"} loss=${ev.loss != null ? Number(ev.loss).toFixed(4) : "—"}`;
+          }
           if (kind === "session_ready") return "session_id=" + ev.session_id;
           if (kind === "halted_done") return ev.message || "halted";
           if (kind === "error") return (ev.type || "") + " — " + (ev.message || "");
@@ -201,8 +266,16 @@
         ]));
         evs.scrollTop = evs.scrollHeight;
 
+        if (kind === "training_step" && ev.loss != null) {
+          lossHistory.push({ step: ev.step, loss: Number(ev.loss), stage: ev.stage });
+          if (lossHistory.length % 1 === 0) renderLoss();
+        }
         if (kind === "answer" && ev.text) {
-          document.getElementById("mas-answer").textContent = ev.text;
+          renderAnswer(ev.text);
+          if (ev.topic_id || ev.session_id) {
+            document.getElementById("mas-meta").textContent =
+              `topic=${ev.topic_id || "—"} · session=${ev.session_id || "—"}`;
+          }
         }
         if (kind === "session_ready" && ev.session_id) {
           selectedSid = ev.session_id;
@@ -289,10 +362,19 @@
         if (!selectedSid) { UI.err(new Error("Select a session first.")); return; }
         try {
           const res = await API.get(`/node/mas/sessions/${encodeURIComponent(selectedSid)}/latent`);
-          const snap = res.snapshot || res;
-          document.getElementById("ctl-out").innerHTML = "";
-          document.getElementById("ctl-out").appendChild(el("pre", { class: "mono small", style: "white-space:pre-wrap" },
-            JSON.stringify(snap, null, 2)));
+          const snap = res.snapshot || res || {};
+          const out = document.getElementById("ctl-latent");
+          out.innerHTML = "";
+          out.appendChild(el("div", { class: "small dim", style: "margin-bottom:4px" },
+            `shape=${JSON.stringify(snap.shape)} stage=${snap.stage ?? "?"} step=${snap.step ?? "?"}`));
+          const values = snap.values || [];
+          if (Array.isArray(values) && values.length) {
+            const flat = Array.isArray(values[0]) ? values.flat() : values;
+            const cols = Array.isArray(snap.shape) && snap.shape.length === 2 ? snap.shape[1] : 32;
+            out.appendChild(window.Chart.heatmap(flat, { cols, height: 140 }));
+          } else {
+            out.appendChild(el("div", { class: "small dim" }, "no latent values returned"));
+          }
         } catch (e) { UI.err(e); }
       }
       function ctlOut(op, res) {

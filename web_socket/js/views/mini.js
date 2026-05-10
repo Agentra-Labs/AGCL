@@ -1,5 +1,6 @@
 /* Mini-Trainer — background mini-model trainer.
- * status, start/stop/pause/resume, test prompt, config, presets, checkpoint. */
+ * status, start/stop/pause/resume, test prompt, config, presets, checkpoint,
+ * live loss + throughput sparklines built from polling. */
 
 (function () {
   const V = window.Views = window.Views || {};
@@ -8,6 +9,9 @@
   V.mini = {
     mount(root) {
       let pollTimer = null;
+      const lossHist = [];
+      const tputHist = [];
+      const MAX = 120;
 
       const view = {
         unmount() { clearInterval(pollTimer); },
@@ -16,7 +20,15 @@
 
       root.appendChild(el("section", { class: "block" }, [
         el("h2", null, "Status"),
-        el("div", { id: "mini-status", class: "card" }, loadingNode()),
+        el("div", { class: "split-2" }, [
+          el("div", { id: "mini-status", class: "card" }, loadingNode()),
+          el("div", { class: "card" }, [
+            el("h3", null, "Loss curve"),
+            el("div", { id: "mini-loss" }),
+            el("h3", { style: "margin-top:14px" }, "Throughput"),
+            el("div", { id: "mini-tput" }),
+          ]),
+        ]),
         el("div", { class: "row", style: "margin-top:10px" }, [
           el("button", { class: "btn-ok",   onClick: () => act("start") },  "Start"),
           el("button", { class: "btn-warn", onClick: () => act("pause") },  "Pause"),
@@ -43,7 +55,7 @@
             numFieldInline("mini-temp", "temperature", 0.8, 0, 2, 0.05),
             el("button", { onClick: testGen }, "Generate"),
           ]),
-          el("div", { id: "mini-out", class: "card", style: "margin-top:10px;background:var(--bg);min-height:60px;white-space:pre-wrap" }),
+          el("div", { id: "mini-out", class: "card md", style: "margin-top:10px;background:var(--bg);min-height:60px" }),
         ]),
       ]));
 
@@ -93,7 +105,35 @@
               el("span", { class: "v" }, [v && v.nodeType ? v : document.createTextNode(String(v ?? "—"))]),
             ]));
           });
+
+          // Update history
+          if (s.loss != null && !isNaN(Number(s.loss))) {
+            lossHist.push(Number(s.loss));
+            if (lossHist.length > MAX) lossHist.shift();
+          }
+          if (s.throughput != null && !isNaN(Number(s.throughput))) {
+            tputHist.push(Number(s.throughput));
+            if (tputHist.length > MAX) tputHist.shift();
+          }
+          renderCharts();
         } catch (e) { UI.err(e); }
+      }
+
+      function renderCharts() {
+        const lossEl = document.getElementById("mini-loss");
+        const tputEl = document.getElementById("mini-tput");
+        lossEl.innerHTML = "";
+        tputEl.innerHTML = "";
+        if (lossHist.length > 1) {
+          lossEl.appendChild(window.Chart.line(lossHist, { height: 140 }));
+        } else {
+          lossEl.appendChild(el("div", { class: "small dim" }, "loss curve will appear after a couple of polls"));
+        }
+        if (tputHist.length > 1) {
+          tputEl.appendChild(window.Chart.line(tputHist, { height: 140 }));
+        } else {
+          tputEl.appendChild(el("div", { class: "small dim" }, "throughput curve will appear after a couple of polls"));
+        }
       }
 
       async function loadConfig() {
@@ -163,10 +203,13 @@
         const temperature = Number(document.getElementById("mini-temp").value);
         if (!prompt) { UI.err(new Error("Prompt required.")); return; }
         const out = document.getElementById("mini-out");
-        out.textContent = "generating…";
+        out.innerHTML = "<div class='small dim'>generating…</div>";
         try {
           const res = await API.post("/node/mini/test", { prompt, max_new, temperature });
-          out.textContent = res.decoded || JSON.stringify(res, null, 2);
+          const text = res.decoded || JSON.stringify(res, null, 2);
+          out.innerHTML = "<div class='small dim' style='margin-bottom:6px'>"
+                        + `step=${res.step ?? "?"} arch=${res.arch ?? "?"} strategy=${res.strategy ?? "?"}</div>`
+                        + window.MD.render(text);
         } catch (e) { out.textContent = ""; UI.err(e); }
       }
 
