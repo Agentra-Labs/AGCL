@@ -7,7 +7,11 @@ name = "agcl"
 version = "0.1.0"
 description = "Hybrid local–cloud control plane for multi-agent research and infra orchestration."
 readme = "README.md"
-requires-python = ">=3.13"
+# 3.10+ matches the runtime the real implementation under `agcl/` was
+# built against. The collaborator's scaffold pinned 3.13 — we relax it
+# so the recursive / toolkit / tui code keeps working on the Python
+# the existing requirements.txt was tested with.
+requires-python = ">=3.10"
 dependencies = [
     "anthropic>=0.28.0",
     "fastapi>=0.111.0",
@@ -27,11 +31,29 @@ dev = [
 ]
 
 [project.scripts]
+# Console entry point. agcl.cli:main is the *real* one at agcl/cli.py.
+# The setuptools scaffold added a stub at src/agcl/cli.py which now
+# re-exports from this same target so both call sites resolve to the
+# same function.
 agcl = "agcl.cli:main"
 
+# Pack only the real implementation. The src/agcl shim is not declared
+# as a package (no `where = ["src"]` here) — it stays in-tree as a
+# redirect for editable / dev workflows but is not duplicated into
+# the wheel, avoiding the `agcl` package-name collision.
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["agcl*"]
+exclude = [
+    "tests*", "docs*", "plugins*", "clients*", "deploy*",
+    "scripts*", "env*", "src*", "collab_progress*", "models*",
+    ".agent_state*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# Both roots on the path so `import agcl` resolves to the top-level
+# real package (first match wins) and the scaffold-style import path
+# `from agcl import __version__` exercised by tests/test_package.py
+# still works against the same package.
+pythonpath = [".", "src"]
