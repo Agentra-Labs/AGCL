@@ -1,14 +1,15 @@
 """
 ASCII banner + icon renderer for AGCL.
 
-The icon at icon.png renders to a small grayscale ASCII block using only
-the three characters allowed by the project's CLI style rules: `=`, `-`,
-and space. Pillow does the resize + grayscale; everything else is
-stdlib. If Pillow is unavailable, fall back to the text logo so the CLI
-still launches.
+The icon at icon.png renders to a small grayscale ASCII block using
+three characters: `=`, `-`, and space. Pillow does the resize +
+grayscale; everything else is stdlib.
 
-`render_icon(width=40)` returns a multi-line string suitable for
-printing at the top of the CLI banner.
+Colors come from `agcl.ui`: the icon body uses an accent gradient
+(cyan-leaning), the title is bold + accent, the rule lines are dim.
+Falls back to plain ASCII when:
+  - Pillow isn't installed (-> text logo)
+  - the terminal doesn't support color (NO_COLOR / piped stdout)
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import List, Optional
+
+from agcl import ui as _ui
 
 
 # Three-level brightness ramp. Index 0 is the brightest pixel on a dark
@@ -33,6 +36,29 @@ def _ascii_logo() -> str:
         " =   =  ==== = ===  =====  \n"
         "       Agentic CLI \n"
     )
+
+
+def _color_icon_row(row: str, y: int, height: int) -> str:
+    """
+    Apply a vertical color gradient to an icon row when truecolor is on.
+    Top -> bottom: cool cyan -> light blue -> soft green. Looks alive
+    without being loud. Falls back to a single accent color in 16-color.
+    """
+    if not _ui.COLOR:
+        return row
+    if not _ui.TRUECOLOR:
+        return _ui.paint(row, _ui.Palette.accent())
+    # Linear interp between three stops (cyan / sky / mint).
+    stops = [(125, 211, 252), (147, 197, 253), (134, 239, 172)]
+    t = y / max(1, height - 1)
+    if t < 0.5:
+        a, b, m = stops[0], stops[1], t * 2
+    else:
+        a, b, m = stops[1], stops[2], (t - 0.5) * 2
+    r = int(a[0] + (b[0] - a[0]) * m)
+    g = int(a[1] + (b[1] - a[1]) * m)
+    bl = int(a[2] + (b[2] - a[2]) * m)
+    return f"\033[38;2;{r};{g};{bl}m{row}\033[0m"
 
 
 def find_icon(start: Optional[Path] = None) -> Optional[Path]:
@@ -86,20 +112,29 @@ def render_icon(width: int = 40, height: Optional[int] = None,
                 chars.append("-")
             else:
                 chars.append(" ")
-        rows.append("".join(chars))
+        rows.append(_color_icon_row("".join(chars), y, height))
     return "\n".join(rows)
 
 
-def banner(width: int = 40) -> str:
-    """Composed startup banner: icon + title + tagline."""
+def banner(width: int = 40, *, tagline: str = "Agentic CLI") -> str:
+    """
+    Composed startup banner: icon (gradient) + title (accent + bold) +
+    tagline (dim) + thin rule (dim).
+
+    Set `AGCL_NO_COLOR=1` (or `NO_COLOR=1`) to disable colors and get
+    the original mono ASCII back.
+    """
     icon = render_icon(width=width)
-    bar = "=" * (width + 2)
-    title = "AGCL - Agentic CLI"
-    pad = max(0, (width - len(title)) // 2)
+    bar = _ui.styled("=" * (width + 2), dim=True)
+    title = _ui.styled("AGCL · Agentic CLI", bold=True, fg=_ui.Palette.accent())
+    sub   = _ui.styled(tagline, dim=True, italic=True)
+    title_pad = max(0, (width - 18) // 2)         # 18 = visible chars in title
+    sub_pad   = max(0, (width - len(tagline)) // 2)
     return (
         f"{bar}\n"
         f"{icon}\n"
         f"{bar}\n"
-        f"{' ' * pad}{title}\n"
+        f"{' ' * title_pad}{title}\n"
+        f"{' ' * sub_pad}{sub}\n"
         f"{bar}\n"
     )
