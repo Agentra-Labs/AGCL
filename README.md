@@ -182,6 +182,7 @@ MCP details → [docs/integrations/mcp.md](docs/integrations/mcp.md).
 | Set per-provider quotas, register custom APIs, watch usage | **[docs/dashboard.md](docs/dashboard.md)** |
 | Toggle / configure the optional mini-model trainer | **[docs/minimodel.md](docs/minimodel.md)** |
 | Diagnose a problem | **[docs/troubleshooting.md](docs/troubleshooting.md)** |
+| Understand auth, threat model, and deployment hardening | **[docs/security.md](docs/security.md)** |
 | See what every code file does | **[docs/code-map.md](docs/code-map.md)** |
 | Read the full technical spec | **[docs/SPEC.md](docs/SPEC.md)** |
 
