@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 venv/
 ENV/
+env/
 
 # Packaging / build
 build/
@@ -40,9 +41,7 @@ htmlcov/
 # AGCL-specific runtime state (kept from the pre-rebase ignore list)
 # Note: gitignore patterns can't have inline trailing comments, so
 # each entry is on its own line with a comment block above it.
-
-# legacy venv path used by some contributors (alongside .venv/ above)
-env/
+# (env/ is covered above under "Virtual environments".)
 
 # session state, trained-topic checkpoints, mini-trainer artifacts
 .agent_state/
