@@ -25,9 +25,11 @@ import os
 from typing import Any, Dict, Optional
 
 
-# Lazily-built singletons; reset() clears.
+# Cached singletons. The chat-client singleton was removed (httpx
+# pools must close inside the loop that opened them); state_store and
+# checkpoint_store stay cached because they're file-system-backed and
+# safe to keep across loops.
 _CACHE: Dict[str, Any] = {
-    "chat_client": None,
     "state_store": None,
     "checkpoint_store": None,
 }
@@ -70,11 +72,18 @@ def _select_chat_endpoint() -> Optional[Dict[str, str]]:
 
 def get_chat_client():
     """
-    Return an OpenAICompatClient or None if no toolkit gateway is
-    configured (caller should fall back to agcl.cloud legacy path).
+    Return a fresh OpenAICompatClient (or None if no gateway is
+    configured). Callers OWN the returned client and must call
+    `await client.aclose()` when done — `async with client: ...` is the
+    cleanest pattern.
+
+    We deliberately don't cache: the underlying httpx.AsyncClient owns
+    a connection pool that must be closed inside the same asyncio loop
+    that opened it. Caching across calls makes that ordering fragile
+    and is the source of "Event loop is closed" tracebacks at process
+    exit. Reconnecting per call is cheap (one TCP handshake; the wire
+    protocol is HTTP/1.1 keep-alive within a single stream anyway).
     """
-    if _CACHE["chat_client"] is not None:
-        return _CACHE["chat_client"]
     sel = _select_chat_endpoint()
     if sel is None:
         return None
@@ -85,7 +94,6 @@ def get_chat_client():
     # Stash the resolved default model on the client for callers that
     # don't explicitly pass one.
     client.default_model = sel["model"]  # type: ignore[attr-defined]
-    _CACHE["chat_client"] = client
     return client
 
 

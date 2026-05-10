@@ -45,7 +45,30 @@ from .control import TrainingControl, HaltedError
 from . import persistence as P
 
 
+import re as _re
+
+# Patterns small models confabulate when they have nothing real to say.
+# Hits trigger fallback-to-cloud regardless of length / vocabulary.
+_HALLUCINATION_PATTERNS = [
+    _re.compile(r"refer to (?:the )?(?:image|figure|picture|diagram|chart|table|video) (?:above|below)", _re.I),
+    _re.compile(r"!\[[^\]]*\]\(https?://", _re.I),                        # markdown image
+    _re.compile(r"https?://(?:i\.)?imgur\.com/[A-Za-z0-9]+", _re.I),       # fake imgur
+    _re.compile(r"\bsee (?:figure|table|diagram) \d", _re.I),
+    _re.compile(r"\bas shown in (?:the )?(?:figure|image|diagram|table)", _re.I),
+    _re.compile(r"as (?:we )?(?:saw|discussed) (?:earlier|previously|above)", _re.I),
+]
+
+
 def _looks_degenerate(text: str) -> bool:
+    """
+    True if the local model's output is empty / repetitive / confabulated.
+    Catches:
+      - sub-8-char outputs
+      - pure punctuation
+      - same-token-repeated
+      - hallucinated image / figure / table references
+      - made-up URLs (imgur shortcuts, markdown image syntax)
+    """
     s = (text or "").strip()
     if len(s) < 8:
         return True
@@ -54,7 +77,18 @@ def _looks_degenerate(text: str) -> bool:
     words = s.split()
     if len(words) >= 4 and len(set(words)) == 1:
         return True
+    for pat in _HALLUCINATION_PATTERNS:
+        if pat.search(s):
+            return True
     return False
+
+
+def _strict_mode() -> bool:
+    """Read STRICT_MODE env var (or AGCL_STRICT) at call time so users
+    can flip it without restarting. Off by default."""
+    import os
+    return os.getenv("AGCL_STRICT", os.getenv("STRICT_MODE", "0")) \
+            .lower().strip() in ("1", "true", "yes", "on", "strict")
 
 
 async def _cloud_full(history: List[Dict[str, str]],
@@ -91,6 +125,7 @@ class RecursiveSession:
                  persist: bool = True,
                  state_dir: Optional[str] = None,
                  verbose: bool = True,
+                 strict: Optional[bool] = None,
                  control: Optional[TrainingControl] = None):
         self.mas = mas
         self.provider = provider
@@ -111,6 +146,18 @@ class RecursiveSession:
             from agcl.config import STATE_DIR
             state_dir = STATE_DIR
         self.state_dir = state_dir
+
+        # Strict mode (anti-hallucination): when on, never serve raw
+        # local-MAS output for a turn. Forces the continuator path so
+        # the cloud always finishes the response, and tightens the
+        # degeneracy detector. Defaults to env (`AGCL_STRICT=1`).
+        self.strict = _strict_mode() if strict is None else bool(strict)
+        if self.strict:
+            # Continuator becomes the floor; user-set False is upgraded.
+            self.cloud_continue = True
+            # Cap the prefix tightly so a small model can't fabricate
+            # a long wrong opener even when the prefix isn't dropped.
+            self.prefix_tokens = min(self.prefix_tokens, 8)
 
         self.history: List[Dict[str, str]] = []
         self.trained_once = False

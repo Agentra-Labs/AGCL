@@ -62,27 +62,44 @@ async def _stream_toolkit_gateway(msgs):
     Route through agcl.toolkit when AGCL_LLM_BASE_URL (LiteLLM proxy),
     VLLM_HOST, or OLLAMA_HOST is set. The gateway client picks the
     right backend automatically; we just need to pass messages.
+
+    Closes the underlying httpx pool before returning so we don't get
+    "Event loop is closed" tracebacks on CLI exit.
     """
     from agcl.toolkit.registry import get_chat_client
     client = get_chat_client()
     if client is None:
         return  # caller will fall back to provider-direct path
     model = getattr(client, "default_model", None) or "smart"
-    async for chunk in client.stream(msgs, model=model):
-        yield chunk
+    try:
+        async for chunk in client.stream(msgs, model=model):
+            yield chunk
+    finally:
+        try: await client.aclose()
+        except Exception: pass
 
 
 async def _stream_openai(msgs):
+    """
+    Stream via the OpenAI SDK. The SDK's AsyncOpenAI wraps an httpx
+    AsyncClient; we close it explicitly here. If we don't, GC closes
+    it after asyncio.run() has already shut the loop down — which
+    yields the "Event loop is closed" tracebacks.
+    """
     import openai
     client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
-    async with client.chat.completions.stream(
-        model=OPENAI_MODEL,
-        messages=msgs,
-    ) as stream:
-        async for event in stream:
-            delta = event.choices[0].delta.content if event.choices else None
-            if delta:
-                yield delta
+    try:
+        async with client.chat.completions.stream(
+            model=OPENAI_MODEL,
+            messages=msgs,
+        ) as stream:
+            async for event in stream:
+                delta = event.choices[0].delta.content if event.choices else None
+                if delta:
+                    yield delta
+    finally:
+        try: await client.close()
+        except Exception: pass
 
 
 async def _stream_claude(msgs, prefix):
@@ -94,14 +111,20 @@ async def _stream_claude(msgs, prefix):
 
     # Anthropic requires last turn to be user unless using prefill.
     # We keep the trailing assistant message — Claude continues from it.
-    async with client.messages.stream(
-        model=CLAUDE_MODEL,
-        max_tokens=1024,
-        system=system,
-        messages=turns,
-    ) as stream:
-        async for text in stream.text_stream:
-            yield text
+    try:
+        async with client.messages.stream(
+            model=CLAUDE_MODEL,
+            max_tokens=1024,
+            system=system,
+            messages=turns,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+    finally:
+        # Close the SDK's owned httpx pool before the asyncio loop tears
+        # down (otherwise httpx's GC-time aclose hits a closed loop).
+        try: await client.close()
+        except Exception: pass
 
 
 #  public entry point

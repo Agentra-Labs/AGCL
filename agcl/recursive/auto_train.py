@@ -90,6 +90,7 @@ async def _cloud_call(prompt: str, provider: Optional[str] = None,
     out = ""
     in_tokens_real = out_tokens_real = None
     err = None
+    client = None     # held outside the try so the finally can aclose it
     try:
         if provider == "openai":
             import openai
@@ -123,6 +124,14 @@ async def _cloud_call(prompt: str, provider: Optional[str] = None,
         err = f"{type(e).__name__}: {e}"
         raise
     finally:
+        # Close the SDK's owned httpx pool while the asyncio loop is
+        # still alive — otherwise GC closes it after asyncio.run() has
+        # already torn the loop down ("Event loop is closed" tracebacks).
+        if client is not None:
+            try:
+                await client.close()
+            except Exception:
+                pass
         try:
             _usage.record_call(
                 provider=provider,

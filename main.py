@@ -347,6 +347,7 @@ def _run_recursive(args):
             cloud_continue=args.continue_with_cloud,
             prefix_tokens=args.prefix_tokens,
             persist=not args.no_persist,
+            strict=args.strict,
         )
 
         # one-shot mode: prompt was passed on the command line
@@ -487,6 +488,10 @@ def main():
                     help="how many tokens the local MAS produces in continuator mode")
     rp.add_argument("--no-persist", action="store_true",
                     help="do not save trained links / centroids to disk")
+    rp.add_argument("--strict", action="store_true",
+                    help="force the continuator path on every turn — local "
+                         "MAS only generates a short prefix, cloud always "
+                         "finishes (= AGCL_STRICT=1; reduces small-model hallucination)")
 
     # `node` opens this PC to an authorized GUI client over HTTP+SSE
     np = sub.add_parser("node",

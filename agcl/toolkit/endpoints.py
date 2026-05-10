@@ -127,17 +127,27 @@ def make_toolkit_router() -> APIRouter:
         model = body.model or getattr(client, "default_model", None) or "smart"
         if body.stream:
             async def gen():
-                async for chunk in client.stream(
-                    body.messages, model=model,
-                    max_tokens=body.max_tokens, temperature=body.temperature,
-                ):
-                    yield f"data: {json.dumps({'delta': chunk})}\n\n"
-                yield "data: [DONE]\n\n"
+                # Own the client for the lifetime of the stream so the
+                # httpx pool closes inside the request's loop.
+                try:
+                    async for chunk in client.stream(
+                        body.messages, model=model,
+                        max_tokens=body.max_tokens, temperature=body.temperature,
+                    ):
+                        yield f"data: {json.dumps({'delta': chunk})}\n\n"
+                    yield "data: [DONE]\n\n"
+                finally:
+                    try: await client.aclose()
+                    except Exception: pass
             return StreamingResponse(gen(), media_type="text/event-stream")
-        return await client.chat(
-            body.messages, model=model,
-            max_tokens=body.max_tokens, temperature=body.temperature,
-        )
+        try:
+            return await client.chat(
+                body.messages, model=model,
+                max_tokens=body.max_tokens, temperature=body.temperature,
+            )
+        finally:
+            try: await client.aclose()
+            except Exception: pass
 
     # ── distributed state ──────────────────────────────────────────
     @r.put("/state")
