@@ -24,8 +24,12 @@
       "require": "./dist/vue.cjs"
     }
   },
+  "bin": {
+    "agcl-client": "./bin/agcl-client.mjs"
+  },
   "files": [
     "dist",
+    "bin",
     "README.md"
   ],
   "scripts": {

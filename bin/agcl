@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# agcl — POSIX shell wrapper for the AGCL CLI.
+#
+# Lets users type `agcl <subcommand>` instead of `python main.py <subcommand>`.
+# Resolves the project root by walking upward from this script's location,
+# so the wrapper works whether you symlinked it into ~/.local/bin, copied
+# it into /usr/local/bin, or run it directly out of the checkout.
+#
+# It picks the Python interpreter in this priority:
+#   1. $AGCL_PYTHON               — explicit override
+#   2. <repo>/.venv/bin/python    — uv venv (preferred)
+#   3. <repo>/env/bin/python      — pip venv (legacy)
+#   4. python3                    — first one on PATH
+#   5. python                     — last resort
+#
+# Forwards every argument unchanged. Stdin / signals pass through.
+# Use `agcl --print-root` to debug discovery.
+
+set -euo pipefail
+
+# Resolve symlinks so a `ln -s /path/to/repo/bin/agcl ~/.local/bin/agcl`
+# install still finds the project root.
+_resolve() {
+    local src="$1"
+    while [ -L "$src" ]; do
+        local dir; dir="$(cd -P "$(dirname "$src")" && pwd)"
+        src="$(readlink "$src")"
+        case "$src" in
+            /*) ;;
+            *)  src="$dir/$src" ;;
+        esac
+    done
+    echo "$(cd -P "$(dirname "$src")" && pwd)/$(basename "$src")"
+}
+
+SCRIPT_PATH="$(_resolve "$0")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Sanity check: the wrapper should sit in <repo>/bin/.
+if [ ! -f "$ROOT/main.py" ]; then
+    echo "agcl: cannot find main.py — looked in $ROOT" >&2
+    echo "agcl: run from inside the AGCL checkout, or set AGCL_ROOT" >&2
+    exit 2
+fi
+ROOT="${AGCL_ROOT:-$ROOT}"
+
+if [ "${1:-}" = "--print-root" ]; then
+    echo "$ROOT"
+    exit 0
+fi
+
+# Pick interpreter
+pick_python() {
+    if [ -n "${AGCL_PYTHON:-}" ] && [ -x "$AGCL_PYTHON" ]; then
+        echo "$AGCL_PYTHON"; return
+    fi
+    if [ -x "$ROOT/.venv/bin/python" ]; then
+        echo "$ROOT/.venv/bin/python"; return
+    fi
+    if [ -x "$ROOT/env/bin/python" ]; then
+        echo "$ROOT/env/bin/python"; return
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        echo python3; return
+    fi
+    if command -v python >/dev/null 2>&1; then
+        echo python; return
+    fi
+    echo "agcl: no python interpreter found (set AGCL_PYTHON)" >&2
+    exit 127
+}
+PY="$(pick_python)"
+
+# Run from the repo root so STATE_DIR / models/ / mas.json resolve relative.
+cd "$ROOT"
+exec "$PY" main.py "$@"
