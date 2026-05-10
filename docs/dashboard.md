@@ -5,8 +5,14 @@ the new `/node/usage/*` endpoints expose. It's a single HTML page
 shipped from [`agcl/dashboard.py`](../agcl/dashboard.py); no external
 build, no CDN, no JS framework.
 
-> Sister doc: GUI integration contract → **[gui.md](gui.md)**.
-> Endpoints reference: **[gui/endpoints.md](gui/endpoints.md)**.
+> Sister docs:
+> - **[web-console.md](web-console.md)** — the larger bundled
+>   `/web_socket/` console covers everything this dashboard does *and*
+>   the rest of the node API (chat, MAS, mini-trainer, toolkit, plugins,
+>   diagnostics, deploy manifests). Use that for the full UI; this
+>   in-server dashboard is the lightweight, zero-deps fallback.
+> - **[gui.md](gui.md)** — GUI integration contract for building your own.
+> - **[gui/endpoints.md](gui/endpoints.md)** — full endpoints reference.
 
 ---
 

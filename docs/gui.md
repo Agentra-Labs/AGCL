@@ -14,9 +14,18 @@ This doc is for whoever's writing the **GUI / web frontend** that talks
 to a user's local AGCL (Agentic CLI) install. It's the front door — the
 substantive content lives in the topic-specific files below.
 
-> **Sister doc:** for plugging AGCL into agent platforms
-> (MCP / Slack / Discord / Zapier) or for cloud / Docker / npm /
-> Kubernetes targets, see **[integrations.md](integrations.md)**.
+> **Already shipped:** AGCL bundles a full HTML/CSS/JS console at
+> [`/web_socket/`](../web_socket/) that drives every endpoint
+> documented below. If you don't need a custom design, skip ahead to
+> **[docs/web-console.md](web-console.md)** — host the bundled console
+> on GitHub Pages or any static host and point it at your node.
+>
+> **Sister docs:**
+> - [docs/web-console.md](web-console.md) — using the shipped console
+> - [docs/dashboard.md](dashboard.md) — the smaller `/node/dashboard`
+>   page baked into the Python server (usage + quotas only)
+> - [docs/integrations.md](integrations.md) — agent-platform adapters
+>   (MCP / Slack / Discord / Zapier) and cloud / Docker / npm / Kubernetes targets
 
 ---
 
