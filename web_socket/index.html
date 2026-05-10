@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AGCL Console</title>
+<link rel="icon" type="image/png" href="assets/icon.png" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-overview" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" fill="none" stroke="currentColor"/><rect x="9" y="1" width="6" height="6" fill="none" stroke="currentColor"/><rect x="1" y="9" width="6" height="6" fill="none" stroke="currentColor"/><rect x="9" y="9" width="6" height="6" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="10" fill="none" stroke="currentColor"/><polyline points="4,12 4,15 7,12" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-mas" viewBox="0 0 16 16"><circle cx="3" cy="3" r="2" fill="none" stroke="currentColor"/><circle cx="13" cy="3" r="2" fill="none" stroke="currentColor"/><circle cx="8" cy="13" r="2" fill="none" stroke="currentColor"/><line x1="3" y1="3" x2="8" y2="13" stroke="currentColor"/><line x1="13" y1="3" x2="8" y2="13" stroke="currentColor"/><line x1="3" y1="3" x2="13" y2="3" stroke="currentColor"/></symbol>
+    <symbol id="i-topics" viewBox="0 0 16 16"><rect x="1" y="3" width="14" height="2" fill="currentColor"/><rect x="1" y="7" width="14" height="2" fill="currentColor"/><rect x="1" y="11" width="14" height="2" fill="currentColor"/></symbol>
+    <symbol id="i-mini" viewBox="0 0 16 16"><polygon points="8,1 14,5 14,11 8,15 2,11 2,5" fill="none" stroke="currentColor"/><circle cx="8" cy="8" r="2" fill="currentColor"/></symbol>
+    <symbol id="i-usage" viewBox="0 0 16 16"><polyline points="1,14 4,9 7,11 10,5 14,8" fill="none" stroke="currentColor"/><line x1="1" y1="14" x2="14" y2="14" stroke="currentColor"/></symbol>
+    <symbol id="i-config" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor"/><line x1="8" y1="1" x2="8" y2="4" stroke="currentColor"/><line x1="8" y1="12" x2="8" y2="15" stroke="currentColor"/><line x1="1" y1="8" x2="4" y2="8" stroke="currentColor"/><line x1="12" y1="8" x2="15" y2="8" stroke="currentColor"/></symbol>
+    <symbol id="i-toolkit" viewBox="0 0 16 16"><rect x="1" y="6" width="6" height="9" fill="none" stroke="currentColor"/><rect x="9" y="1" width="6" height="9" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-plugins" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" fill="none" stroke="currentColor"/><line x1="6" y1="1" x2="6" y2="3" stroke="currentColor"/><line x1="10" y1="1" x2="10" y2="3" stroke="currentColor"/><line x1="6" y1="13" x2="6" y2="15" stroke="currentColor"/><line x1="10" y1="13" x2="10" y2="15" stroke="currentColor"/></symbol>
+    <symbol id="i-diag" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor"/><line x1="8" y1="8" x2="11" y2="5" stroke="currentColor"/><line x1="8" y1="8" x2="8" y2="3" stroke="currentColor"/></symbol>
+    <symbol id="i-deploy" viewBox="0 0 16 16"><polyline points="2,10 8,14 14,10" fill="none" stroke="currentColor"/><polyline points="2,7 8,11 14,7" fill="none" stroke="currentColor"/><polyline points="2,4 8,8 14,4" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-power" viewBox="0 0 16 16"><path d="M5 3 a6 6 0 1 0 6 0" fill="none" stroke="currentColor"/><line x1="8" y1="1" x2="8" y2="8" stroke="currentColor"/></symbol>
+    <symbol id="i-x" viewBox="0 0 16 16"><line x1="3" y1="3" x2="13" y2="13" stroke="currentColor"/><line x1="13" y1="3" x2="3" y2="13" stroke="currentColor"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M2 8 a6 6 0 1 1 2 4.2" fill="none" stroke="currentColor"/><polyline points="2,10 4,12 6,10" fill="none" stroke="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 16 16"><rect x="4" y="3" width="3" height="10" fill="currentColor"/><rect x="9" y="3" width="3" height="10" fill="currentColor"/></symbol>
+    <symbol id="i-play" viewBox="0 0 16 16"><polygon points="4,3 13,8 4,13" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<div id="auth" class="auth-pad" hidden>
+  <img src="assets/icon.png" alt="" class="auth-logo" />
+  <h2>AGCL Console</h2>
+  <p class="small">Connect to a local AGCL node. Run
+    <code>python main.py node --port 9876 --cors "*"</code> on the host
+    machine — the bearer key is printed once on startup. Stays in this
+    browser's localStorage; never sent anywhere else.</p>
+  <form id="auth-form">
+    <label class="small" for="auth-host">Host (default https://localhost:9876)</label>
+    <input type="text" id="auth-host" placeholder="https://localhost:9876" autocomplete="off" />
+    <label class="small" for="auth-key">Bearer key</label>
+    <input type="password" id="auth-key" placeholder="paste bearer key" autocomplete="off" autofocus />
+    <button type="submit">Connect</button>
+  </form>
+  <p class="small auth-err" id="auth-err"></p>
+  <p class="small dim">No CORS? Browser blocking mixed content? See
+    <a href="README.md">README.md</a>.</p>
+</div>
+
+<div id="app" hidden>
+
+<aside class="sidebar">
+  <div class="brand">
+    <img src="assets/icon.png" alt="" class="brand-logo" />
+    <div>
+      <div class="brand-title">AGCL</div>
+      <div class="brand-sub">Console</div>
+    </div>
+  </div>
+
+  <nav class="nav" id="nav">
+    <a data-view="overview" class="active"><svg class="ico"><use href="#i-overview"/></svg>Overview</a>
+    <a data-view="chat"><svg class="ico"><use href="#i-chat"/></svg>Chat</a>
+    <a data-view="mas"><svg class="ico"><use href="#i-mas"/></svg>Recursive MAS</a>
+    <a data-view="topics"><svg class="ico"><use href="#i-topics"/></svg>Topics</a>
+    <a data-view="mini"><svg class="ico"><use href="#i-mini"/></svg>Mini-Trainer</a>
+    <a data-view="usage"><svg class="ico"><use href="#i-usage"/></svg>Usage &amp; Cost</a>
+    <a data-view="config"><svg class="ico"><use href="#i-config"/></svg>Configuration</a>
+    <a data-view="toolkit"><svg class="ico"><use href="#i-toolkit"/></svg>Toolkit</a>
+    <a data-view="plugins"><svg class="ico"><use href="#i-plugins"/></svg>Plugins</a>
+    <a data-view="diagnostics"><svg class="ico"><use href="#i-diag"/></svg>Diagnostics</a>
+    <a data-view="deploy"><svg class="ico"><use href="#i-deploy"/></svg>Deploy Manifests</a>
+  </nav>
+
+  <div class="conn-pill">
+    <div class="conn-row">
+      <span class="dot" id="conn-dot"></span>
+      <span class="conn-host" id="conn-host">—</span>
+    </div>
+    <button class="btn-ghost" id="logout">
+      <svg class="ico"><use href="#i-power"/></svg>Disconnect
+    </button>
+  </div>
+</aside>
+
+<main class="content">
+  <header class="topbar">
+    <h1 id="view-title">Overview</h1>
+    <div class="topbar-right">
+      <button class="btn-ghost" id="btn-refresh">
+        <svg class="ico"><use href="#i-refresh"/></svg>Refresh
+      </button>
+      <span class="small dim" id="last-tick">—</span>
+    </div>
+  </header>
+
+  <div id="view-root"></div>
+
+  <div id="toast" class="toast" hidden></div>
+</main>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/views/overview.js"></script>
+<script src="js/views/chat.js"></script>
+<script src="js/views/mas.js"></script>
+<script src="js/views/topics.js"></script>
+<script src="js/views/mini.js"></script>
+<script src="js/views/usage.js"></script>
+<script src="js/views/config.js"></script>
+<script src="js/views/toolkit.js"></script>
+<script src="js/views/plugins.js"></script>
+<script src="js/views/diagnostics.js"></script>
+<script src="js/views/deploy.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
