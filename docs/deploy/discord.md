@@ -108,11 +108,45 @@ You can also do this from the GUI: **Toolkit** tab → find
 
 ## Step 4 — Start the bot
 
-```bash
-python main.py slack --help        # (slack is a sibling adapter — same pattern)
+There are **three equivalent ways** to start (and later stop) the bot,
+all driven by the same backend module. Pick whichever fits your
+workflow — they all observe the same state.
 
-# Actually start the discord bot:
-python main.py toolkit discord     # or: python -m agcl.toolkit.discord
+### Option A — Web Console (no terminal)
+
+After completing the wizard via Setup → Cloud accounts → **Discord →
+Deploy**, jump to the **Toolkit** tab → **Bots & services** card list.
+Find the **Discord bot** card and click **Start**.
+
+The card updates in place: pill flips to "running", PID + uptime
+appear, and a **Stop** / **Restart** button replaces Start. Click
+**Logs** to tail captured stdout/stderr live.
+
+### Option B — Through the running node from the CLI
+
+If the node is already running and you'd rather use the terminal:
+
+```bash
+# state of every managed bot
+agcl bot list
+
+# start / stop / restart / inspect
+agcl bot start discord
+agcl bot status discord
+agcl bot logs discord --tail 100
+agcl bot restart discord
+agcl bot stop discord
+```
+
+These commands wrap the same lifecycle manager the GUI uses. Note:
+when run as a *separate* CLI invocation (without a running node),
+this manages a bot for the lifetime of that CLI process only — for
+long-running bots prefer A, B-via-GUI, or the legacy Option C.
+
+### Option C — Legacy: run as a free-standing process
+
+```bash
+python main.py toolkit discord
 ```
 
 What you should see:

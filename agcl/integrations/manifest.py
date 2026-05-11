@@ -94,6 +94,69 @@ def _h_mas_latent(args: Dict[str, Any]) -> Dict[str, Any]:
     return {"session_id": sid, "snapshot": sess.control.latent_snapshot()}
 
 
+def _h_chat_run(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Fast prefix+cloud chat — no MAS training, no link weights touched.
+
+    This is the alternate path adapters can use when MAS is overkill
+    for the use case (e.g. a Discord bot that just needs a quick
+    answer). Mirrors the exact session shape and ordering of the
+    main.py `_run_chat` HTTP handler so the two are interchangeable
+    against the same session_id.
+
+    Composes:
+        agcl.local_llm.generate_prefix(...)  — short llama.cpp prefix
+        agcl.cloud.stream_continuation(...)  — cloud finishes the turn
+        agcl.state                           — append + flush per turn
+        agcl.context.append(...)             — recontextualize on overflow
+    """
+    from agcl import state, local_llm, cloud, context
+    msg = (args.get("message") or "").strip()
+    if not msg:
+        return {"error": "message required"}
+    sid = args.get("session_id") or "default"
+    provider = args.get("provider") or None
+    recovery = args.get("recovery_mode") or "natural"
+
+    state.touch()
+
+    async def _run() -> Dict[str, Any]:
+        sess = state.get_session(sid)
+        messages = sess["messages"]
+        # Append user turn + recontextualize if needed (same as the
+        # /chat/{sid} HTTP route does).
+        messages = await context.append(messages, "user", msg)
+        sess["messages"] = messages
+        state.put_session(sid, sess)
+
+        # Local prefix — best-effort. If the model isn't loaded / fails,
+        # we just skip the prefix and let the cloud handle the turn cold.
+        prefix = ""
+        try:
+            gp = local_llm.generate_prefix(messages)
+            # generate_prefix returns (text, local_ms_seconds); be
+            # tolerant of older single-value returns too.
+            prefix = (gp[0] if isinstance(gp, tuple) else gp) or ""
+            prefix = prefix.strip()
+        except Exception:
+            prefix = ""
+
+        # Drain the cloud stream.
+        full = prefix
+        async for chunk in cloud.stream_continuation(
+            messages, prefix, provider, recovery,
+        ):
+            full += chunk
+
+        # Persist the assistant turn the same way the HTTP route does.
+        sess["messages"] = await context.append(sess["messages"], "assistant", full)
+        state.put_session(sid, sess)
+        state.flush_session(sid)
+        return {"answer": full, "prefix": prefix,
+                "session_id": sid, "provider": provider}
+
+    return asyncio.run(_run())
+
+
 def _h_mini_test(args: Dict[str, Any]) -> Dict[str, Any]:
     from agcl.mini import runtime as M
     prompt = (args.get("prompt") or "").strip()
@@ -243,6 +306,23 @@ def clear_state() -> None:
 # ---------------------------------------------------------------------
 
 TOOLS: List[Dict[str, Any]] = [
+    {
+        "name": "agcl.chat.run",
+        "description": "Fast chat: local llama.cpp prefix + cloud continuation. "
+                       "No MAS network, no training. Use this from bots that "
+                       "need a quick reply without per-topic learning.",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "message":       {"type": "string"},
+                "session_id":    {"type": "string", "default": "default"},
+                "provider":      {"type": "string", "enum": ["openai", "claude"]},
+                "recovery_mode": {"type": "string", "enum": ["natural", "humor", "explicit"]},
+            },
+            "required": ["message"],
+        },
+        "handler": _h_chat_run,
+    },
     {
         "name": "agcl.mas.run",
         "description": "Run a turn through AGCL's recursive multi-agent engine. "

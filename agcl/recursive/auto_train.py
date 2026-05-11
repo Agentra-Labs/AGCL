@@ -30,7 +30,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import threading
+from contextlib import contextmanager
 from typing import Callable, List, Optional, Tuple
 
 import torch
@@ -39,6 +42,34 @@ import torch.nn.functional as F
 from .mas import RecursiveMAS
 from .backends import HFBackend
 from .control import TrainingControl, HaltedError
+
+
+@contextmanager
+def _NullCtx():
+    """No-op context manager — keeps the optional `with anomaly_ctx:`
+    line at the start of `auto_train` valid even when anomaly detection
+    is disabled."""
+    yield
+
+
+# A SINGLE global lock that serializes any concurrent `auto_train` call.
+#
+# Why this matters: the node holds a shared `_mas_singleton` (one
+# RecursiveMAS network, one set of inner+outer link parameters) and
+# fans incoming requests across it. Two clients calling /node/mas/run
+# in rapid succession (e.g. two Discord messages, two GUI sends) both
+# open their own RecursiveSession but the underlying `mas.inner` and
+# `mas.outer` Modules are SHARED. Without this lock, both sessions
+# launch their own AdamW.step() on the same Parameters, racing each
+# other's version counters and tripping autograd with the classic
+# "AsStridedBackward0 ... at version 78; expected 76" error — exactly
+# the bug that came back via the Discord bot.
+#
+# We hold this for the WHOLE training pass (both stages). Read-only
+# forward calls (`mas.run_latent_text`, `mas.generate_text`) are NOT
+# guarded — multiple inferences can interleave safely against frozen
+# weights.
+_TRAIN_LOCK = threading.Lock()
 
 
 # ---------- cloud calls ----------
@@ -187,15 +218,45 @@ async def cloud_confirm_switch(prev: str, curr: str,
 # ---------- training ----------
 
 def _freeze_agents(mas: RecursiveMAS):
-    """Set requires_grad=False on every agent param; return restore fn."""
-    saved = []
+    """Freeze every agent param and put each backend model in eval mode.
+
+    Two things matter for the gradient computation that follows:
+
+    1. `requires_grad=False` on every agent parameter, so backward
+       through the link weights doesn't try to accumulate grads into
+       the (potentially massive, frozen) agent weights.
+
+    2. `.eval()` on each HF backend's model. Without this, dropout
+       layers fire during each forward pass and modify their input
+       tensor in place (this is what blew up with the
+       "AsStridedBackward0 was at version 156; expected 154" error —
+       the dropout-mutated activation was a strided view of a Linear
+       weight from the OuterLink chain that re-appeared in the second
+       forward pass during Stage B). Eval mode also stops batchnorm
+       running stats from updating, which is an in-place op on the
+       agent's own buffers and pollutes consecutive calls.
+
+    Both are restored when training ends so the agent goes back to its
+    original mode (which is `train()` for HF models loaded normally).
+    """
+    saved_grad = []
+    saved_train = []
     for a in mas.agents:
         for p in a.parameters():
-            saved.append((p, p.requires_grad))
+            saved_grad.append((p, p.requires_grad))
             p.requires_grad = False
+        # If the backend is HF (or anything exposing .model), put the
+        # underlying nn.Module in eval mode for the duration of training.
+        backend_model = getattr(getattr(a, "backend", None), "model", None)
+        if backend_model is not None and hasattr(backend_model, "training"):
+            saved_train.append((backend_model, backend_model.training))
+            backend_model.eval()
+
     def restore():
-        for p, rg in saved:
+        for p, rg in saved_grad:
             p.requires_grad = rg
+        for m, t in saved_train:
+            m.train(t)
     return restore
 
 
@@ -238,12 +299,27 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
             _emit({"event": "halted", "stage": stage, "step": step})
             raise HaltedError(f"halted during {stage} step {step}")
 
+    # Optional autograd anomaly detection — set AGCL_MAS_ANOMALY=1 to
+    # debug future autograd-inplace errors. Off by default (slow).
+    _anomaly = os.environ.get("AGCL_MAS_ANOMALY", "").lower() in ("1", "true", "yes")
+    _anomaly_ctx = (torch.autograd.set_detect_anomaly(True, check_nan=False)
+                    if _anomaly else _NullCtx())
+
+    # Serialize concurrent training across all callers — the shared
+    # _mas_singleton in agcl.node would otherwise have two AdamW
+    # optimizers stepping on the same params from different threads.
+    _TRAIN_LOCK.acquire()
     restore = _freeze_agents(mas)
     try:
+      with _anomaly_ctx:
         # ---- target latent (no grad) ----
         with torch.no_grad():
             target_latent, _ = final_agent.forward_latent_text(answer)
-        target_latent = target_latent.detach()             # [1, D_final]
+        # `.clone()` after `.detach()` severs any view aliasing from
+        # the forward pass we just ran in no_grad — important because
+        # the expand_as() below would otherwise hold a strided view
+        # onto storage that future agent calls might mutate.
+        target_latent = target_latent.detach().clone()     # [1, D_final]
 
         link_params = (list(mas.inner.parameters())
                        + list(mas.outer.parameters()))
@@ -255,7 +331,14 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
         s1: List[float] = []
         if stage1_steps > 0:
             _emit({"event": "stage1_start", "total_steps": stage1_steps})
-            opt = torch.optim.AdamW(link_params, lr=lr1)
+            # foreach=False forces AdamW to use the per-tensor (not
+            # fused multi-tensor) update path. The fused path was the
+            # source of the "version 156 vs 154" autograd error on
+            # Linear weights when a forward graph spanned two model
+            # invocations (stage B): the fused implementation bumps
+            # the param version twice in a way the AsStrided view
+            # captured during the first forward couldn't see.
+            opt = torch.optim.AdamW(link_params, lr=lr1, foreach=False)
             for step in range(stage1_steps):
                 _gate("stage1", step)
                 text = prompts[step % len(prompts)]
@@ -264,7 +347,9 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                     control.record_latent(latent)
                 tgt = target_latent.expand_as(latent)
                 loss = (1.0 - F.cosine_similarity(latent, tgt, dim=-1)).mean()
-                opt.zero_grad(); loss.backward(); opt.step()
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                opt.step()
                 v = float(loss.item())
                 s1.append(v)
                 _emit({"event": "stage1_step", "step": step + 1,
@@ -291,14 +376,25 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                        "reason": "answer tokenized to < 2 tokens"})
             else:
                 _emit({"event": "stage2_start", "total_steps": stage2_steps})
-                opt2 = torch.optim.AdamW(link_params, lr=lr2)
+                opt2 = torch.optim.AdamW(link_params, lr=lr2, foreach=False)
                 embed = model.get_input_embeddings()
+                # `use_cache=False` disables the past_key_values cache
+                # mutation that some HF causal-LM models do on every
+                # forward; another in-place op that interferes when the
+                # same model is called twice in one graph.
                 for step in range(stage2_steps):
                     _gate("stage2", step)
                     text = prompts[step % len(prompts)]
                     latent, _ = mas.run_latent_text(text)         # [1, D]
                     if control is not None:
                         control.record_latent(latent)
+                    # contiguous() forces a fresh storage if the latent
+                    # is a non-contiguous view (it usually is — the last
+                    # InnerLink output is a Linear output, and that's
+                    # a row-sliced view of the per-batch outputs). A
+                    # fresh storage here means stage B's forward chain
+                    # can't alias anything from the stage A graph.
+                    latent = latent.contiguous()
                     prompt_ids = tok(text, return_tensors="pt",
                                      truncation=True).input_ids
                     full_ids = torch.cat(
@@ -310,7 +406,9 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                     e_full = torch.cat(
                         [e[:, :T_p], inj, e[:, T_p:]], dim=1,
                     )
-                    out = model(inputs_embeds=e_full, return_dict=True)
+                    out = model(inputs_embeds=e_full,
+                                use_cache=False,
+                                return_dict=True)
                     logits = out.logits                            # [1, T, V]
                     T_a = ans_ids.size(0)
                     # logits at positions [T_p .. T_p+T_a-1] predict
@@ -320,7 +418,9 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
                         ans_logits.reshape(-1, ans_logits.size(-1)),
                         ans_ids.to(ans_logits.device),
                     )
-                    opt2.zero_grad(); loss.backward(); opt2.step()
+                    opt2.zero_grad(set_to_none=True)
+                    loss.backward()
+                    opt2.step()
                     v = float(loss.item())
                     s2.append(v)
                     _emit({"event": "stage2_step", "step": step + 1,
@@ -340,6 +440,11 @@ def auto_train(mas: RecursiveMAS, question: str, answer: str,
         return {"stage1_losses": s1, "stage2_losses": s2}
     finally:
         restore()
+        # Release the global training lock acquired above. Always pair
+        # with the acquire() in the matching try-block so a crash mid-
+        # training doesn't hold the lock forever.
+        try: _TRAIN_LOCK.release()
+        except RuntimeError: pass
 
 
 # ---------- topic tracking ----------

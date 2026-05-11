@@ -13,6 +13,9 @@
       let currentSid = localStorage.getItem("agcl.chat.sid") || "default";
       let activeStream = null;
       let mdEnabled = (localStorage.getItem("agcl.chat.md") ?? "1") === "1";
+      // Reasoning mode: "fast" = prefix + cloud continuation (/node/chat),
+      //                 "mas"  = recursive multi-agent (/node/mas/stream).
+      let mode = localStorage.getItem("agcl.chat.mode") || "fast";
 
       const view = {
         unmount() { if (activeStream) { try { activeStream.abort(); } catch {} } },
@@ -37,6 +40,11 @@
               el("span", { id: "chat-title", class: "mono" }, currentSid),
             ]),
             el("div", { class: "row", style: "margin-bottom:8px" }, [
+              el("label", { class: "small", title: "Fast = local llama.cpp prefix + cloud continuation (single shot, no learning). Recursive MAS = multi-agent reasoning loop with online learning (slower first turn, smarter on follow-ups)." }, "Mode"),
+              el("select", { id: "chat-mode" }, [
+                el("option", { value: "fast", ...(mode === "fast" ? { selected: "" } : {}) }, "Fast (prefix + cloud)"),
+                el("option", { value: "mas",  ...(mode === "mas"  ? { selected: "" } : {}) }, "Recursive MAS"),
+              ]),
               el("label", { class: "small" }, "Provider"),
               el("select", { id: "chat-provider" }, [
                 el("option", { value: "" }, "(default)"),
@@ -75,6 +83,13 @@
         mdEnabled = e.target.checked;
         localStorage.setItem("agcl.chat.md", mdEnabled ? "1" : "0");
         loadHistory();
+      });
+      document.getElementById("chat-mode").addEventListener("change", e => {
+        mode = e.target.value;
+        localStorage.setItem("agcl.chat.mode", mode);
+        // Hide the local-prefix bubble in MAS mode (there isn't one).
+        document.getElementById("chat-recovery").parentElement
+          .style.opacity = (mode === "mas") ? "0.4" : "1";
       });
 
       function onKey(e) {
@@ -210,16 +225,51 @@
         const provider = document.getElementById("chat-provider").value || undefined;
         const recovery = document.getElementById("chat-recovery").value || undefined;
 
-        const localBubble = appendMsg("local prefix", "", "local");
-        const cloudBubble = appendMsg("assistant", "", "cloud");
-
         document.getElementById("chat-send").disabled = true;
         document.getElementById("chat-cancel").hidden = false;
 
+        if (mode === "mas") {
+          // Recursive MAS path: stream events from /node/mas/stream.
+          // Renders training-step events as a thin progress line, then
+          // the final answer as a normal assistant bubble.
+          const trainBubble = appendMsg("recursive MAS", "", "local");
+          const trainBody = trainBubble.querySelector(".body");
+          const cloudBubble = appendMsg("assistant", "", "cloud");
+          activeStream = API.sse(
+            "/node/mas/stream",
+            { message: msg, session_id: currentSid },
+            {
+              onEvent(ev) {
+                const kind = ev.event;
+                if (kind === "training_step") {
+                  const s = `stage=${ev.stage ?? "?"} step=${ev.step}/${ev.total_steps ?? "?"} loss=${Number(ev.loss).toFixed(4)}`;
+                  trainBody.textContent = s;
+                } else if (kind === "answer" && ev.text) {
+                  appendChunk(cloudBubble, ev.text, true);
+                } else if (kind === "halted_done" || kind === "model_loading") {
+                  trainBody.textContent = ev.message || kind;
+                } else if (kind === "error") {
+                  UI.toast("MAS error: " + (ev.message || ""), "err");
+                }
+              },
+              onError(e) { UI.err(e); cancel(); },
+              onDone() {
+                document.getElementById("chat-log").scrollTop =
+                  document.getElementById("chat-log").scrollHeight;
+                if (!trainBody.textContent) trainBubble.remove();
+                cancel();
+              },
+            }
+          );
+          return;
+        }
+
+        // Fast path: /node/chat with prefix + cloud-continuation events.
+        const localBubble = appendMsg("local prefix", "", "local");
+        const cloudBubble = appendMsg("assistant", "", "cloud");
         const body = { message: msg };
         if (provider) body.provider = provider;
         if (recovery) body.recovery_mode = recovery;
-
         activeStream = API.sse(
           "/node/chat/" + encodeURIComponent(currentSid),
           body,
@@ -240,8 +290,8 @@
             },
             onError(e) { UI.err(e); cancel(); },
             onDone() {
-              const log = document.getElementById("chat-log");
-              log.scrollTop = log.scrollHeight;
+              document.getElementById("chat-log").scrollTop =
+                document.getElementById("chat-log").scrollHeight;
               cancel();
             },
           }

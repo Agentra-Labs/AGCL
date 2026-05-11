@@ -763,6 +763,28 @@ def main():
         choices=[None, "openai", "anthropic", "claude", "deepseek"],
         help="provider name (for check/quota); blank = all")
 
+    # `integrations` — list / show / disconnect any registered integration
+    inp = sub.add_parser("integrations",
+        help="manage stored integration credentials (discord, aws, gcp, ...)")
+    int_sub = inp.add_subparsers(dest="int_cmd")
+    int_sub.add_parser("list", help="show every integration + which env vars are set")
+    isho = int_sub.add_parser("show", help="show one integration's current values (secrets masked)")
+    isho.add_argument("name")
+    idis = int_sub.add_parser("disconnect", help="clear every .env key for an integration")
+    idis.add_argument("name")
+
+    # `bot` — manage long-running bot subprocesses (Discord, Slack, MCP, ...)
+    bp = sub.add_parser("bot",
+        help="manage long-running bots (discord, slack, mcp-sse, agentmod)")
+    bot_sub = bp.add_subparsers(dest="bot_cmd")
+    bot_sub.add_parser("list", help="show all known bots + their current status")
+    for _ac in ("start", "stop", "restart", "status"):
+        _sp = bot_sub.add_parser(_ac, help=f"{_ac} a managed bot")
+        _sp.add_argument("name")
+    _lg = bot_sub.add_parser("logs", help="tail a bot's captured stdout/stderr")
+    _lg.add_argument("name")
+    _lg.add_argument("--tail", type=int, default=100)
+
     # `auth` — connect to ops services (Docker / GCP / Kubernetes)
     ap_auth = sub.add_parser("auth",
         help="manage ops-service auth (docker, gcp, k8s)")
@@ -857,6 +879,106 @@ def main():
         for w in res.get("warnings", []):
             print(f"warning  {w}", file=sys.stderr)
         sys.exit(0)
+    elif args.cmd == "bot":
+        # Subprocess-based bot lifecycle. CLI is a thin wrapper over
+        # agcl.bot_runtime — the GUI hits the same module via
+        # /node/setup/bots/*. CLI and GUI always observe the same state
+        # because the bots live in the running node's process.
+        from agcl import bot_runtime as B
+        ac = getattr(args, "bot_cmd", None) or "list"
+        if ac == "list":
+            for s in B.list_all():
+                state = "RUNNING" if s["running"] else "stopped"
+                miss = ""
+                if s.get("missing_env"):    miss += f" missing-env={s['missing_env']}"
+                if s.get("missing_import"): miss += f" missing-import={s['missing_import']}"
+                print(f"  {s['name']:<10}  {state:<8}  pid={s['pid']}  uptime={int(s['uptime_sec'])}s  exit={s['exit_code']}{miss}")
+                print(f"  {'':<10}  {s['title']}")
+            sys.exit(0)
+        if ac in ("start", "stop", "restart", "status"):
+            b = B.get_bot(args.name)
+            if not b: print(f"unknown bot: {args.name}", file=sys.stderr); sys.exit(2)
+            if ac == "start":   res = b.start()
+            elif ac == "stop":  res = b.stop()
+            elif ac == "restart": res = b.restart()
+            else:               res = b.status()
+            print(json.dumps(res if isinstance(res, dict) else b.status(), indent=2))
+            sys.exit(0 if (ac == "status" or res.get("ok", True)) else 1)
+        if ac == "logs":
+            b = B.get_bot(args.name)
+            if not b: print(f"unknown bot: {args.name}", file=sys.stderr); sys.exit(2)
+            for line in b.tail(args.tail):
+                print(line)
+            sys.exit(0)
+        print(f"unknown bot subcommand: {ac}", file=sys.stderr); sys.exit(2)
+    elif args.cmd == "integrations":
+        # Routed through the same endpoint shape the GUI uses so CLI
+        # and GUI always read the same state — but here we shortcut
+        # via direct in-process import to avoid needing a node up.
+        import os
+        # Map mirrors agcl/setup_endpoints.py INTEGRATION_KEYS exactly.
+        INTEGRATION_KEYS = {
+            "discord":     ["DISCORD_BOT_TOKEN", "DISCORD_APP_ID", "DISCORD_GUILD_ID"],
+            "slack":       ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"],
+            "aws":         ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION"],
+            "github":      ["GITHUB_USERNAME", "GITHUB_PERSONAL_TOKEN"],
+            "huggingface": ["HUGGING_FACE_HUB_TOKEN"],
+            "cloudflare":  ["CLOUDFLARE_API_TOKEN", "AGCL_RELAY_TOKEN", "AGCL_RELAY_URL"],
+            "openai":      ["OPENAI_API_KEY"],
+            "anthropic":   ["ANTHROPIC_API_KEY"],
+            "deepseek":    ["DEEPSEEK_API_KEY"],
+            "vllm":        ["VLLM_HOST", "VLLM_MODEL", "VLLM_API_KEY"],
+            "tgi":         ["TGI_HOST", "TGI_MODEL"],
+            "ollama":      ["OLLAMA_HOST", "OLLAMA_MODEL"],
+            "litellm":     ["AGCL_LLM_BASE_URL", "AGCL_LLM_API_KEY", "AGCL_LLM_MODEL"],
+            "redis":       ["AGCL_REDIS_URL"],
+            "minio":       ["AGCL_S3_BUCKET", "AGCL_S3_ENDPOINT", "AGCL_S3_KEY_ID",
+                            "AGCL_S3_SECRET", "AGCL_S3_REGION"],
+            "webrtc":      ["AGCL_WEBRTC_ENABLED", "AGCL_STUN_URL", "AGCL_TURN_URL",
+                            "AGCL_TURN_USERNAME", "AGCL_TURN_PASSWORD"],
+            "postgres":    ["DATABASE_URL"],
+        }
+        ac = getattr(args, "int_cmd", None)
+        if not ac:
+            print("usage: agcl integrations {list|show|disconnect}", file=sys.stderr); sys.exit(2)
+        if ac == "list":
+            for name, keys in INTEGRATION_KEYS.items():
+                configured = [k for k in keys if os.environ.get(k)]
+                state = "set" if configured else "—"
+                print(f"  {name:<14}  {state:<3}  {'/'.join(configured) or '(no env vars)'}")
+            sys.exit(0)
+        if ac == "show":
+            keys = INTEGRATION_KEYS.get(args.name)
+            if keys is None: print(f"unknown integration: {args.name}", file=sys.stderr); sys.exit(2)
+            for k in keys:
+                v = os.environ.get(k, "")
+                if any(t in k for t in ("KEY","SECRET","TOKEN","PASSWORD","API")) and v:
+                    v = f"***({len(v)} chars)"
+                print(f"  {k}={v}")
+            sys.exit(0)
+        if ac == "disconnect":
+            keys = INTEGRATION_KEYS.get(args.name)
+            if keys is None: print(f"unknown integration: {args.name}", file=sys.stderr); sys.exit(2)
+            from pathlib import Path
+            env_path = Path(__file__).resolve().parent / ".env"
+            cleared = []
+            if env_path.exists():
+                import re
+                lines = env_path.read_text(encoding="utf-8").splitlines()
+                kept = []
+                for line in lines:
+                    m = re.match(r"^\s*([A-Z_][A-Z0-9_]*)\s*=", line)
+                    if m and m.group(1) in keys:
+                        cleared.append(m.group(1)); continue
+                    kept.append(line)
+                env_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+            for k in keys: os.environ.pop(k, None)
+            if cleared:
+                print(f"cleared from .env: {', '.join(cleared)}")
+            else:
+                print("nothing to clear (no matching keys in .env)")
+            sys.exit(0)
+        print(f"unknown integrations subcommand: {ac}", file=sys.stderr); sys.exit(2)
     elif args.cmd == "provider":
         from agcl import integrations_auth as IA
         action = getattr(args, "action", "status") or "status"

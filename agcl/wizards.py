@@ -447,6 +447,60 @@ def _validate_deepseek(sess, step):
     return r
 
 
+@register_action("pip_install")
+def _pip_install(sess, step):
+    """Install one or more Python packages into the running interpreter.
+
+    Idempotent: skips packages whose `check_import` already imports.
+    Auto-detects `uv pip` vs plain `pip` so both install paths work.
+    """
+    import importlib, shutil, subprocess, sys
+    packages = step.get("packages") or []
+    if isinstance(packages, str): packages = [packages]
+    if not packages:
+        return {"ok": True, "installed": [], "skipped": [], "note": "no packages"}
+
+    installed: list = []
+    skipped:   list = []
+    failed:    list = []
+
+    for p in packages:
+        # `p` can be {"pip": "discord.py", "import": "discord"} or just a string
+        pip_name    = p["pip"]    if isinstance(p, dict) else p
+        import_name = p.get("import", pip_name) if isinstance(p, dict) else pip_name
+        # de-version: "redis[hiredis]" -> "redis"
+        import_name = import_name.split("[", 1)[0].split("==", 1)[0]
+        try:
+            importlib.import_module(import_name)
+            skipped.append(pip_name)
+            continue
+        except ImportError:
+            pass
+        # Pick installer
+        if shutil.which("uv"):
+            cmd = ["uv", "pip", "install", "--python", sys.executable, pip_name]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install", pip_name]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if r.returncode == 0:
+                installed.append(pip_name)
+                # invalidate cache + try import to confirm
+                importlib.invalidate_caches()
+                try: importlib.import_module(import_name)
+                except ImportError:
+                    failed.append({"pip": pip_name, "reason": "installed but still not importable"})
+            else:
+                failed.append({"pip": pip_name, "stderr": (r.stderr or r.stdout)[-400:]})
+        except Exception as e:
+            failed.append({"pip": pip_name, "error": str(e)})
+
+    if failed:
+        msg = "; ".join([f"{f['pip']}: {f.get('stderr') or f.get('error') or f.get('reason')}" for f in failed])
+        raise RuntimeError(f"pip install failed — {msg}")
+    return {"ok": True, "installed": installed, "skipped": skipped}
+
+
 @register_action("docker_run_detached")
 def _docker_run(sess, step):
     """Run a `docker run` command in the background and return the container id."""
@@ -581,6 +635,8 @@ WIZARDS: Dict[str, Dict[str, Any]] = {
         "steps": [
             {"id": "intro", "type": "info", "title": "Connect HuggingFace",
              "body": "Required for downloading gated models like Llama / Gemma."},
+            {"id": "install_sdk", "type": "action", "action": "pip_install",
+             "packages": [{"pip": "huggingface_hub", "import": "huggingface_hub"}]},
             {"id": "open_tokens", "type": "open_url", "title": "Get a token",
              "url": "https://huggingface.co/settings/tokens",
              "body": "Create a token with at least 'Read' permission. For gated models, accept the license on each model page first."},
@@ -703,6 +759,8 @@ WIZARDS: Dict[str, Dict[str, Any]] = {
         "steps": [
             {"id": "intro", "type": "info", "title": "Deploy a Discord bot",
              "body": "1) Create an application in Discord's dev portal.\n2) Paste the bot token here.\n3) We generate an invite URL.\n4) Click it, pick your server, authorize.\n5) Run `agcl toolkit discord` to bring the bot online."},
+            {"id": "install_sdk", "type": "action", "action": "pip_install",
+             "packages": [{"pip": "discord.py", "import": "discord"}]},
             {"id": "open_portal", "type": "open_url", "title": "Create an application",
              "url": "https://discord.com/developers/applications",
              "body": "Click 'New Application'. On the next page, sidebar → 'Bot' → 'Reset Token' → copy the token. Also enable 'MESSAGE CONTENT INTENT' down the page so @mentions work."},
@@ -736,6 +794,8 @@ WIZARDS: Dict[str, Dict[str, Any]] = {
         "steps": [
             {"id": "intro", "type": "info", "title": "Deploy a Slack bot",
              "body": "Slack apps need a bot token (xoxb-...) and a signing secret. Both come from api.slack.com under your app's settings."},
+            {"id": "install_sdk", "type": "action", "action": "pip_install",
+             "packages": [{"pip": "slack-bolt", "import": "slack_bolt"}]},
             {"id": "open_slack", "type": "open_url", "title": "Create a Slack app",
              "url": "https://api.slack.com/apps?new_app=1",
              "body": "Pick 'From scratch', name + workspace.\n- 'OAuth & Permissions' → add bot scopes: chat:write, app_mentions:read, commands.\n- 'Install to Workspace' → copy the Bot User OAuth Token (xoxb-...).\n- 'Basic Information' → copy the Signing Secret."},
@@ -881,6 +941,8 @@ WIZARDS: Dict[str, Dict[str, Any]] = {
         "steps": [
             {"id": "intro", "type": "info", "title": "Set up Redis",
              "body": "Required only if you'll run multiple AGCL nodes. Otherwise local FS is fine — but this also makes sessions survive node restarts cleanly."},
+            {"id": "install_sdk", "type": "action", "action": "pip_install",
+             "packages": [{"pip": "redis[hiredis]", "import": "redis"}]},
             {"id": "ask_port", "type": "input", "key": "port", "title": "Host port", "default": "6379"},
             {"id": "ask_pw",   "type": "input", "key": "password", "title": "Password (blank = none)", "secret": True, "default": ""},
             {"id": "run",      "type": "action", "action": "docker_run_detached",
@@ -905,6 +967,8 @@ WIZARDS: Dict[str, Dict[str, Any]] = {
         "steps": [
             {"id": "intro", "type": "info", "title": "Set up MinIO",
              "body": "MinIO is a self-hosted S3-compatible server. We'll start it on ports 9000 (API) + 9001 (console), then create a bucket via the console UI."},
+            {"id": "install_sdk", "type": "action", "action": "pip_install",
+             "packages": [{"pip": "aioboto3", "import": "aioboto3"}]},
             {"id": "ask_user", "type": "input", "key": "minio_user", "title": "Root username", "default": "minioadmin"},
             {"id": "ask_pw",   "type": "input", "key": "minio_pw",   "title": "Root password (≥8 chars)", "secret": True, "default": ""},
             {"id": "ask_bucket", "type": "input", "key": "bucket", "title": "Bucket name to create later", "default": "agcl-checkpoints"},
@@ -993,6 +1057,8 @@ WIZARDS: Dict[str, Dict[str, Any]] = {
         "steps": [
             {"id": "intro", "type": "info", "title": "Enable WebRTC signaling",
              "body": "We'll flip on signaling and set ICE servers. The Python aiortc peer is a separate process — see deploy/webrtc.md."},
+            {"id": "install_sdk", "type": "action", "action": "pip_install",
+             "packages": [{"pip": "aiortc", "import": "aiortc"}]},
             {"id": "ask_stun", "type": "input", "key": "stun_url", "title": "STUN URL", "default": "stun:stun.l.google.com:19302"},
             {"id": "ask_turn", "type": "input", "key": "turn_url", "title": "TURN URL (optional)", "default": ""},
             {"id": "ask_tu",   "type": "input", "key": "turn_user", "title": "TURN username (if TURN set)", "default": ""},
