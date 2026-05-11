@@ -336,6 +336,11 @@ def make_setup_router() -> APIRouter:
         from agcl import wizards as W
         return {"wizards": W.list_wizards()}
 
+    @r.get("/wizards/sessions")
+    def wizard_sessions_list(limit: int = 30):
+        from agcl import wizards as W
+        return {"sessions": W.list_sessions(limit=limit)}
+
     @r.get("/wizards/{name}")
     def wizard_descriptor(name: str):
         from agcl import wizards as W

@@ -435,6 +435,80 @@ def _print_topics(state_dir: str) -> None:
               f"seed={r.get('seed_question','')[:60]!r}")
 
 
+# ----- wizard helpers (shared by `agcl deploy` and `agcl wizard run`) -----
+
+def _wizard_list_print() -> None:
+    """Print every available deploy wizard, grouped by category."""
+    from agcl import wizards as W
+    cats: dict = {}
+    for w in W.list_wizards():
+        cats.setdefault(w.get("category", ""), []).append(w)
+    for cat in sorted(cats):
+        print(f"\n== {cat or 'misc'} ==")
+        for w in sorted(cats[cat], key=lambda x: x["name"]):
+            print(f"  {w['name']:<14}  {w['title']}")
+            print(f"  {'':<14}  {w['summary']}")
+    print("\nrun:  agcl deploy <name>   (or: agcl wizard run <name>)")
+
+
+def _wizard_run_interactive(name: str) -> int:
+    """Walk a deploy wizard from the terminal. Returns shell exit code."""
+    import getpass, webbrowser
+    from agcl import wizards as W
+    try:
+        state = W.start(name)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    while state.get("state") == "running" and state.get("step"):
+        step = state["step"]; kind = step.get("type")
+        print()
+        print(f"── {step.get('title', step.get('id'))} ──")
+        if step.get("body"): print(step["body"])
+        if kind == "info":
+            input("[Press Enter to continue] ")
+            state = W.answer(state["id"], None)
+        elif kind == "open_url":
+            url = step.get("url", "")
+            print(f"opening: {url}")
+            try: webbrowser.open(url)
+            except Exception: pass
+            input("[Press Enter once you've done that] ")
+            state = W.answer(state["id"], None)
+        elif kind == "input":
+            default = step.get("default", "")
+            prompt = (f"[default: {default}] " if default else "") + \
+                     (f"{step.get('placeholder','')} > " if step.get("placeholder") else "> ")
+            val = (getpass.getpass(prompt) if step.get("secret") else input(prompt)) or default
+            state = W.answer(state["id"], val)
+        elif kind == "choice":
+            opts = step.get("options", [])
+            for i, opt in enumerate(opts, 1): print(f"  {i}) {opt['label']}")
+            while True:
+                raw = input("Pick a number > ").strip()
+                try:
+                    idx = int(raw) - 1
+                    if 0 <= idx < len(opts): break
+                except Exception: pass
+                print("invalid; try again")
+            state = W.answer(state["id"], opts[idx]["value"])
+        elif kind == "confirm":
+            raw = input("y/n > ").strip().lower()
+            state = W.answer(state["id"], raw in ("y", "yes", "1"))
+        elif kind == "summary":
+            print(step.get("body", ""))
+            break
+        else:
+            print(f"unknown step kind: {kind}; aborting")
+            W.cancel_session(state["id"])
+            break
+    if state.get("state") == "error":
+        print(f"\nwizard failed: {state.get('error')}", file=sys.stderr)
+        return 1
+    print("\nwizard done.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(prog="agcl")
     sub = ap.add_subparsers(dest="cmd")
@@ -660,13 +734,26 @@ def main():
     sl_p.add_argument("--registry", action="store_true",
         help="also print the recommended-models registry")
 
-    # `deploy` — run a per-service deploy wizard
+    # `deploy` — run a per-service deploy wizard (interactive)
     dp = sub.add_parser("deploy",
         help="run an interactive deploy wizard for a service (discord, aws, gcp, ...)")
     dp.add_argument("wizard", nargs="?", default=None,
         help="wizard name — leave blank to list available wizards")
     dp.add_argument("--list", action="store_true",
         help="list wizards and exit")
+
+    # `wizard` — manage wizard sessions (the management commands the GUI uses)
+    wp = sub.add_parser("wizard",
+        help="manage deploy wizard sessions (list / sessions / status / cancel / run)")
+    w_sub = wp.add_subparsers(dest="wizard_cmd")
+    w_sub.add_parser("list", help="list all available wizards")
+    w_sub.add_parser("sessions", help="list active wizard sessions in this node")
+    w_st = w_sub.add_parser("status", help="show a wizard session's state")
+    w_st.add_argument("session_id")
+    w_cn = w_sub.add_parser("cancel", help="cancel a running wizard session")
+    w_cn.add_argument("session_id")
+    w_rn = w_sub.add_parser("run", help="run a wizard interactively (alias for `agcl deploy NAME`)")
+    w_rn.add_argument("name")
 
     # `provider` — live check + quota fetch for OpenAI / Anthropic / DeepSeek
     pp = sub.add_parser("provider",
@@ -820,74 +907,35 @@ def main():
         print(f"unknown auth subcommand: {ac}", file=sys.stderr); sys.exit(2)
     elif args.cmd == "deploy":
         from agcl import wizards as W
-        import webbrowser, getpass
         if args.list or not args.wizard:
-            cats: dict = {}
-            for w in W.list_wizards():
-                cats.setdefault(w.get("category", ""), []).append(w)
-            for cat in sorted(cats):
-                print(f"\n== {cat or 'misc'} ==")
-                for w in sorted(cats[cat], key=lambda x: x["name"]):
-                    print(f"  {w['name']:<14}  {w['title']}")
-                    print(f"  {'':<14}  {w['summary']}")
-            print("\nrun:  python main.py deploy <name>")
+            _wizard_list_print()
             sys.exit(0)
-        try:
-            state = W.start(args.wizard)
-        except ValueError as e:
-            print(f"error: {e}", file=sys.stderr); sys.exit(2)
-        # Walk the wizard
-        while state.get("state") == "running" and state.get("step"):
-            step = state["step"]
-            kind = step.get("type")
-            print()
-            print(f"── {step.get('title', step.get('id'))} ──")
-            if step.get("body"): print(step["body"])
-            if kind == "info":
-                input("[Press Enter to continue] ")
-                state = W.answer(state["id"], None)
-            elif kind == "open_url":
-                url = step.get("url", "")
-                print(f"opening: {url}")
-                try: webbrowser.open(url)
-                except Exception: pass
-                input("[Press Enter once you've done that] ")
-                state = W.answer(state["id"], None)
-            elif kind == "input":
-                prompt = f"{step.get('placeholder', '')} > " if step.get("placeholder") else "> "
-                default = step.get("default", "")
-                if default:
-                    prompt = f"[default: {default}] " + prompt
-                if step.get("secret"):
-                    val = getpass.getpass(prompt) or default
-                else:
-                    val = input(prompt) or default
-                state = W.answer(state["id"], val)
-            elif kind == "choice":
-                opts = step.get("options", [])
-                for i, opt in enumerate(opts, 1):
-                    print(f"  {i}) {opt['label']}")
-                while True:
-                    raw = input("Pick a number > ").strip()
-                    try:
-                        idx = int(raw) - 1
-                        if 0 <= idx < len(opts): break
-                    except Exception: pass
-                    print("invalid; try again")
-                state = W.answer(state["id"], opts[idx]["value"])
-            elif kind == "confirm":
-                raw = input("y/n > ").strip().lower()
-                state = W.answer(state["id"], raw in ("y", "yes", "1"))
-            elif kind == "summary":
-                print(step.get("body", ""))
-                break
-            else:
-                print(f"unknown step kind: {kind}; aborting")
-                W.cancel_session(state["id"]); break
-        if state.get("state") == "error":
-            print(f"\nwizard failed: {state.get('error')}", file=sys.stderr); sys.exit(1)
-        print("\nwizard done.")
-        sys.exit(0)
+        sys.exit(_wizard_run_interactive(args.wizard))
+    elif args.cmd == "wizard":
+        from agcl import wizards as W
+        ac = getattr(args, "wizard_cmd", None)
+        if not ac:
+            print("usage: agcl wizard {list|sessions|status|cancel|run}", file=sys.stderr); sys.exit(2)
+        if ac == "list":
+            _wizard_list_print(); sys.exit(0)
+        if ac == "sessions":
+            sess = W.list_sessions()
+            if not sess: print("(no sessions)"); sys.exit(0)
+            for s in sess:
+                print(f"  {s['id']}  {s['wizard']:<14}  state={s['state']:<10} cursor={s['cursor']}  err={s.get('error') or ''}")
+            sys.exit(0)
+        if ac == "status":
+            from agcl.wizards import get_session, _session_snapshot
+            s = get_session(args.session_id)
+            if not s: print(f"no session: {args.session_id}", file=sys.stderr); sys.exit(2)
+            print(json.dumps(_session_snapshot(s), indent=2)); sys.exit(0)
+        if ac == "cancel":
+            if not W.cancel_session(args.session_id):
+                print(f"no session: {args.session_id}", file=sys.stderr); sys.exit(2)
+            print("cancelled"); sys.exit(0)
+        if ac == "run":
+            sys.exit(_wizard_run_interactive(args.name))
+        print(f"unknown wizard subcommand: {ac}", file=sys.stderr); sys.exit(2)
     elif args.cmd == "setup-list":
         from agcl import setup as S
         inv = S.list_local_models()
