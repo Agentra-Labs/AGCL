@@ -23,10 +23,32 @@ from agcl.integrations.manifest import call_tool
 
 
 SDK_HINT = (
-    "discord.py SDK not installed. Install with:\n"
-    "    pip install discord.py\n"
-    "and re-run.  (REST helpers still work without the SDK.)"
+    "discord.py SDK not installed.\n"
+    "\n"
+    "Fastest path — run the wizard which installs the SDK, paste the\n"
+    "token, generates an invite URL, and prints the start command:\n"
+    "    agcl deploy discord\n"
+    "    (or:  agcl wizard run discord)\n"
+    "\n"
+    "Or install manually and re-run this command:\n"
+    "    python -m pip install discord.py\n"
+    "    python main.py toolkit discord\n"
+    "\n"
+    "(REST helpers like get_me() / post_message() work without the SDK.)"
 )
+
+
+def _missing_token_hint() -> str:
+    return (
+        "DISCORD_BOT_TOKEN is not set.\n"
+        "\n"
+        "Run the wizard to obtain + save it:\n"
+        "    agcl deploy discord\n"
+        "\n"
+        "Or set it manually and re-run:\n"
+        "    echo 'DISCORD_BOT_TOKEN=MTIz...' >> .env\n"
+        "    python main.py toolkit discord"
+    )
 
 
 # ----------------------------------------------------------------------
@@ -94,7 +116,7 @@ def _build_bot():
 
     token = os.environ.get("DISCORD_BOT_TOKEN")
     if not token:
-        print("ERROR: DISCORD_BOT_TOKEN env var is required.", file=sys.stderr)
+        print(_missing_token_hint(), file=sys.stderr)
         return None
 
     intents = discord.Intents.default()
@@ -114,6 +136,19 @@ def _build_bot():
             await tree.sync()
         print(f"AGCL Discord adapter ready as {bot.user}")
 
+    def _mode() -> str:
+        """Read AGCL_DISCORD_MODE at *call time* so the GUI can flip it
+        without restarting the bot — the bot subprocess inherits the
+        env from the node, and the node's _patch_env_file refreshes
+        live os.environ on disconnect-then-reconnect via the wizard.
+        Values: 'fast' (default, no training, agcl.chat.run) or
+        'mas' (recursive MAS with online learning)."""
+        v = (os.environ.get("AGCL_DISCORD_MODE") or "fast").lower().strip()
+        return "mas" if v == "mas" else "fast"
+
+    def _tool_name() -> str:
+        return "agcl.mas.run" if _mode() == "mas" else "agcl.chat.run"
+
     @tree.command(name="ask", description="Ask the AGCL agent")
     @app_commands.describe(prompt="Your question or task")
     async def ask(interaction: "discord.Interaction", prompt: str):
@@ -121,7 +156,7 @@ def _build_bot():
         sid = f"discord-{interaction.user.id}"
         try:
             result = await asyncio.to_thread(
-                call_tool, "agcl.mas.run",
+                call_tool, _tool_name(),
                 {"message": prompt, "session_id": sid},
             )
             answer = result.get("answer", "(no answer)")
@@ -140,7 +175,7 @@ def _build_bot():
         async with message.channel.typing():
             try:
                 result = await asyncio.to_thread(
-                    call_tool, "agcl.mas.run",
+                    call_tool, _tool_name(),
                     {"message": text, "session_id": sid},
                 )
                 answer = result.get("answer", "(no answer)")
@@ -152,9 +187,21 @@ def _build_bot():
 
 
 def run() -> int:
+    # Distinguish between "SDK missing" and "token missing" so the
+    # user sees the right next step.
+    try:
+        import discord                            # noqa: F401
+    except ImportError:
+        print(SDK_HINT, file=sys.stderr)
+        return 1
+    if not os.environ.get("DISCORD_BOT_TOKEN"):
+        print(_missing_token_hint(), file=sys.stderr)
+        return 1
     bot = _build_bot()
     if bot is None:
-        print(SDK_HINT, file=sys.stderr)
+        # Shouldn't happen — SDK + token both present and _build_bot
+        # only fails on either. Defensive log.
+        print("ERROR: failed to construct Discord bot for an unknown reason.", file=sys.stderr)
         return 1
     token = os.environ["DISCORD_BOT_TOKEN"]
     print("AGCL Discord adapter starting (gateway)")

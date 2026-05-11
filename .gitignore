@@ -26,13 +26,10 @@ htmlcov/
 
 # IDE / OS
 .idea/
-.vscode/
 *.swp
 .DS_Store
 
 # Environment and secrets (operators use local .env)
-.env
-.env.*
 !.env.example
 
 # Logs / runtime
@@ -58,3 +55,5 @@ agcl-config.json
 # generated Docker / K8s / GCP artifacts (not source)
 deploy/
 !docs/deploy/
+config.bat
+node_modules

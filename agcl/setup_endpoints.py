@@ -329,6 +329,159 @@ def make_setup_router() -> APIRouter:
         from agcl import integrations_auth as IA
         return IA.k8s_clear_kubeconfig()
 
+    # ---- generic per-integration disconnect ---------------------------
+    # Map of integration name -> list of env keys to clear from .env.
+    # GUI / CLI hit /node/setup/integrations/{name}/disconnect; the
+    # endpoint passes the matching key list to .env's patcher with
+    # empty-string values (which removes them) and reflects the change
+    # into live os.environ so /node/info reflects it immediately.
+
+    INTEGRATION_KEYS = {
+        "discord":     ["DISCORD_BOT_TOKEN", "DISCORD_APP_ID", "DISCORD_GUILD_ID"],
+        "slack":       ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"],
+        "aws":         ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION"],
+        "github":      ["GITHUB_USERNAME", "GITHUB_PERSONAL_TOKEN"],
+        "huggingface": ["HUGGING_FACE_HUB_TOKEN"],
+        "cloudflare":  ["CLOUDFLARE_API_TOKEN", "AGCL_RELAY_TOKEN", "AGCL_RELAY_URL"],
+        "openai":      ["OPENAI_API_KEY"],
+        "anthropic":   ["ANTHROPIC_API_KEY"],
+        "deepseek":    ["DEEPSEEK_API_KEY"],
+        "vllm":        ["VLLM_HOST", "VLLM_MODEL", "VLLM_API_KEY"],
+        "tgi":         ["TGI_HOST", "TGI_MODEL"],
+        "ollama":      ["OLLAMA_HOST", "OLLAMA_MODEL"],
+        "litellm":     ["AGCL_LLM_BASE_URL", "AGCL_LLM_API_KEY", "AGCL_LLM_MODEL"],
+        "redis":       ["AGCL_REDIS_URL"],
+        "minio":       ["AGCL_S3_BUCKET", "AGCL_S3_ENDPOINT", "AGCL_S3_KEY_ID",
+                        "AGCL_S3_SECRET", "AGCL_S3_REGION"],
+        "webrtc":      ["AGCL_WEBRTC_ENABLED", "AGCL_STUN_URL", "AGCL_TURN_URL",
+                        "AGCL_TURN_USERNAME", "AGCL_TURN_PASSWORD"],
+        "postgres":    ["DATABASE_URL"],
+    }
+
+    @r.get("/integrations")
+    def integrations_list():
+        """List every integration's current env values (masked)."""
+        out = {}
+        for name, keys in INTEGRATION_KEYS.items():
+            out[name] = {
+                k: ("***(set)" if any(t in k for t in ("KEY","SECRET","TOKEN","PASSWORD","API"))
+                              and os.environ.get(k)
+                    else os.environ.get(k, ""))
+                for k in keys
+            }
+        return {"integrations": out}
+
+    @r.get("/integrations/{name}")
+    def integration_show(name: str):
+        keys = INTEGRATION_KEYS.get(name)
+        if keys is None:
+            raise HTTPException(404, f"unknown integration: {name}")
+        return {
+            "name": name,
+            "keys": keys,
+            "values": {
+                k: ("***(set)" if any(t in k for t in ("KEY","SECRET","TOKEN","PASSWORD","API"))
+                              and os.environ.get(k)
+                    else os.environ.get(k, ""))
+                for k in keys
+            },
+        }
+
+    # ---- bot lifecycle (Discord / Slack / MCP / OpenAgents) -----------
+    # The node spawns each as a subprocess so the user can start/stop
+    # from CLI or GUI without keeping a separate terminal open. State
+    # lives in agcl/bot_runtime.py.
+
+    @r.get("/bots")
+    def bots_list():
+        from agcl import bot_runtime as B
+        return {"bots": B.list_all()}
+
+    @r.get("/bots/{name}")
+    def bot_status(name: str):
+        from agcl import bot_runtime as B
+        b = B.get_bot(name)
+        if not b: raise HTTPException(404, f"unknown bot: {name}")
+        return b.status()
+
+    @r.post("/bots/{name}/start")
+    def bot_start(name: str):
+        from agcl import bot_runtime as B
+        b = B.get_bot(name)
+        if not b: raise HTTPException(404, f"unknown bot: {name}")
+        res = b.start()
+        if not res.get("ok"):
+            raise HTTPException(400, res.get("message", "start failed"))
+        return {**res, "status": b.status()}
+
+    @r.post("/bots/{name}/stop")
+    def bot_stop(name: str, grace: float = 5.0):
+        from agcl import bot_runtime as B
+        b = B.get_bot(name)
+        if not b: raise HTTPException(404, f"unknown bot: {name}")
+        return {**b.stop(grace_sec=grace), "status": b.status()}
+
+    @r.post("/bots/{name}/restart")
+    def bot_restart(name: str, grace: float = 5.0):
+        from agcl import bot_runtime as B
+        b = B.get_bot(name)
+        if not b: raise HTTPException(404, f"unknown bot: {name}")
+        res = b.restart(grace_sec=grace)
+        if not res.get("ok"):
+            raise HTTPException(400, res.get("message", "restart failed"))
+        return {**res, "status": b.status()}
+
+    @r.get("/bots/{name}/logs")
+    def bot_logs(name: str, tail: int = 100):
+        from agcl import bot_runtime as B
+        b = B.get_bot(name)
+        if not b: raise HTTPException(404, f"unknown bot: {name}")
+        return {"name": name, "lines": b.tail(int(tail))}
+
+    class BotMode(BaseModel):
+        mode: str            # "fast" | "mas"
+        auto_restart: bool = True
+
+    @r.post("/bots/{name}/mode")
+    def bot_set_mode(name: str, body: BotMode):
+        from agcl import bot_runtime as B
+        b = B.get_bot(name)
+        if not b: raise HTTPException(404, f"unknown bot: {name}")
+        res = b.set_mode(body.mode, auto_restart=body.auto_restart)
+        if not res.get("ok"):
+            raise HTTPException(400, res.get("message", "set_mode failed"))
+        return res
+
+    @r.post("/integrations/{name}/disconnect")
+    def integration_disconnect(name: str):
+        """Clear every .env key associated with this integration."""
+        keys = INTEGRATION_KEYS.get(name)
+        if keys is None:
+            raise HTTPException(404, f"unknown integration: {name}")
+        from agcl.setup import _patch_env_file
+        # Pass empty strings — _patch_env_file skips empty updates, so
+        # we need an explicit "remove" path. Easiest: read .env, drop
+        # the matching keys, write back.
+        from pathlib import Path
+        env_path = Path(_patch_env_file.__globals__["PROJECT_ROOT"]) / ".env"
+        cleared = []
+        if env_path.exists():
+            import re
+            lines = env_path.read_text(encoding="utf-8").splitlines()
+            kept = []
+            for line in lines:
+                m = re.match(r"^\s*([A-Z_][A-Z0-9_]*)\s*=", line)
+                if m and m.group(1) in keys:
+                    cleared.append(m.group(1))
+                    continue
+                kept.append(line)
+            env_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        for k in keys:
+            os.environ.pop(k, None)
+        return {"ok": True, "integration": name,
+                "cleared_from_env_file": cleared,
+                "cleared_from_process": keys}
+
     # ------------- deploy wizards --------------------------------------
 
     @r.get("/wizards")

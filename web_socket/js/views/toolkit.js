@@ -37,6 +37,22 @@
     docker:     "github",       // github wizard does the GHCR docker-login
   };
 
+  // Map of toolkit card name -> backend integration name for the
+  // /node/setup/integrations/<name>/disconnect endpoint. Most are
+  // identity; a few discover-adapter names differ from the
+  // INTEGRATION_KEYS keys on the server.
+  const INTEGRATION_NAME = {
+    s3: "minio", docker: "github",   // common case: docker login is via the github wizard
+  };
+
+  // Integrations the server knows how to disconnect (kept in sync with
+  // setup_endpoints.py:INTEGRATION_KEYS).
+  const DISCONNECT_TARGETS = new Set([
+    "discord", "slack", "aws", "github", "huggingface", "cloudflare",
+    "openai", "anthropic", "deepseek", "vllm", "tgi", "ollama",
+    "litellm", "redis", "minio", "webrtc", "postgres",
+  ]);
+
   // Wizards that don't have a discover entry but deserve their own card.
   const EXTRA_TOOLKITS = [
     { name: "discord",      wizard: "discord",      category: "bot",      title: "Discord bot",            summary: "Create a bot, paste token, generate invite URL." },
@@ -90,6 +106,22 @@
         ]),
         el("div", { id: "tk-cards", class: "grid", style: "grid-template-columns:repeat(auto-fill,minmax(280px,1fr))" }, loadingNode()),
         el("div", { id: "tk-wizard-runner", style: "margin-top:14px" }),
+      ]));
+
+      // -------------------- Bots & services -----------------------
+      root.appendChild(el("section", { class: "block" }, [
+        el("div", { class: "row" }, [
+          el("h2", { style: "margin:0" }, "Bots & services"),
+          el("span", { class: "spacer" }),
+          el("span", { class: "small dim", id: "bots-poll-note" }, "auto-refresh every 5s"),
+          el("button", { class: "btn-ghost", onClick: () => loadBots() }, "Refresh"),
+        ]),
+        el("p", { class: "small dim" },
+          "Long-running adapters (Discord bot, Slack bot, MCP server, OpenAgents) run as managed subprocesses of the AGCL node. ",
+          "No separate terminal needed — start/stop them from here. Same endpoints back ",
+          el("code", null, "agcl bot start <name>"), " from the CLI."),
+        el("div", { id: "tk-bots", class: "grid", style: "grid-template-columns:repeat(auto-fill,minmax(320px,1fr))" }, loadingNode()),
+        el("div", { id: "tk-bot-logs", style: "margin-top:14px" }),
       ]));
 
       // -------------------- Gateway chat -------------------------
@@ -273,9 +305,29 @@
                       : t.category === "infra" ? "Configure"
                       : "Connect";
           actions.appendChild(el("button", { onClick: () => launchWizard(t.wizard) }, label));
+          // Edit = re-run the wizard (it overwrites .env keys idempotently)
+          if (t.configured) {
+            actions.appendChild(el("button", { class: "btn-ghost",
+              onClick: () => launchWizard(t.wizard), title: "Re-run wizard — overwrites existing values" }, "Edit"));
+          }
+        }
+        // Disconnect — works for any integration we have a key list for
+        const intName = INTEGRATION_NAME[t.name] || t.name;
+        if (DISCONNECT_TARGETS.has(intName)) {
+          actions.appendChild(el("button", { class: "btn-err",
+            onClick: () => disconnect(intName, t.title) }, "Disconnect"));
         }
         card.appendChild(actions);
         return card;
+      }
+
+      async function disconnect(name, label) {
+        if (!confirm(`Clear all stored credentials for ${label || name}?\n\nThis removes the .env entries for this integration. You can reconnect anytime via the wizard.`)) return;
+        try {
+          const res = await API.post(`/node/setup/integrations/${encodeURIComponent(name)}/disconnect`, {});
+          UI.ok("Cleared: " + (res.cleared_from_env_file || []).join(", "));
+          loadDiscover();
+        } catch (e) { UI.err(e); }
       }
 
       async function ping(name) {
@@ -523,6 +575,176 @@
         } catch (e) { UI.err(e); }
       }
 
+      // ===========================================================
+      // BOTS & SERVICES — long-running subprocesses
+      // ===========================================================
+
+      let _botsPollTimer = null;
+      let _activeLogBot  = null;
+
+      async function loadBots() {
+        const wrap = document.getElementById("tk-bots");
+        wrap.innerHTML = "";
+        try {
+          const res = await API.get("/node/setup/bots");
+          const bots = res.bots || [];
+          if (!bots.length) {
+            wrap.appendChild(el("div", { class: "empty" }, "No managed bots registered."));
+            return;
+          }
+          bots.forEach(b => wrap.appendChild(renderBotCard(b)));
+        } catch (e) { UI.err(e); }
+      }
+
+      function renderBotCard(s) {
+        const card = el("div", { class: "card" });
+        const running = !!s.running;
+        const blocked = !running && (
+          (s.missing_env && s.missing_env.length) ||
+          (s.missing_import && s.missing_import.length)
+        );
+
+        card.appendChild(el("div", { class: "row" }, [
+          el("span", { class: "pill " + (running ? "ok" : (blocked ? "err" : "dim")) },
+            running ? "running" : (blocked ? "blocked" : "stopped")),
+          el("span", { class: "spacer" }),
+          el("span", { class: "small mono dim" }, s.name),
+        ]));
+        card.appendChild(el("h3", { style: "margin:8px 0 4px 0" }, s.title || s.name));
+        card.appendChild(el("p", { class: "small dim", style: "margin:0" }, s.summary || ""));
+
+        // Status detail rows
+        const rows = el("div", { style: "margin-top:6px" });
+        if (running) {
+          rows.appendChild(el("div", { class: "small mono dim" },
+            `pid=${s.pid}  uptime=${Math.round(s.uptime_sec)}s`));
+        } else if (s.exit_code !== null) {
+          rows.appendChild(el("div", { class: "small mono dim" },
+            `last exit_code=${s.exit_code}`));
+        }
+        if (s.missing_env && s.missing_env.length) {
+          rows.appendChild(el("div", { class: "small", style: "color:var(--err)" },
+            "missing env: " + s.missing_env.join(", ")));
+        }
+        if (s.missing_import && s.missing_import.length) {
+          rows.appendChild(el("div", { class: "small", style: "color:var(--err)" },
+            "missing python deps: " + s.missing_import.join(", ")));
+        }
+        // Mode selector (only for bots that have one).
+        if (s.mode_env && Array.isArray(s.mode_options)) {
+          const selId = `bot-mode-${s.name}`;
+          rows.appendChild(el("div", { class: "row", style: "gap:6px;margin-top:6px;align-items:center" }, [
+            el("label", { class: "small dim", for: selId, title: s.mode_env }, "Mode"),
+            el("select", { id: selId, onChange: (e) => botSetMode(s.name, e.target.value) },
+              s.mode_options.map(opt => el("option", {
+                value: opt,
+                ...(opt === s.mode ? { selected: "" } : {}),
+              }, opt === "fast" ? "Fast (prefix + cloud)" : "Recursive MAS"))),
+            running
+              ? el("span", { class: "small dim" }, "auto-restarts on change")
+              : el("span", { class: "small dim" }, "takes effect at next Start"),
+          ]));
+        }
+        card.appendChild(rows);
+
+        // Actions
+        const actions = el("div", { class: "row", style: "margin-top:10px;gap:6px" });
+        if (running) {
+          actions.appendChild(el("button", { class: "btn-err",
+            onClick: () => botStop(s.name) }, "Stop"));
+          actions.appendChild(el("button", { class: "btn-warn",
+            onClick: () => botRestart(s.name) }, "Restart"));
+        } else {
+          actions.appendChild(el("button", { class: "btn-ok",
+            onClick: () => botStart(s.name), ...(blocked ? { disabled: "" } : {}) },
+            "Start"));
+          if (blocked && s.wizard) {
+            actions.appendChild(el("button", { class: "btn-ghost",
+              onClick: () => launchWizard(s.wizard) }, "Fix prerequisites"));
+          }
+        }
+        actions.appendChild(el("button", { class: "btn-ghost",
+          onClick: () => botLogs(s.name) }, "Logs"));
+        card.appendChild(actions);
+
+        return card;
+      }
+
+      async function botSetMode(name, mode) {
+        try {
+          const res = await API.post(`/node/setup/bots/${encodeURIComponent(name)}/mode`,
+            { mode, auto_restart: true });
+          const tag = res.restarted ? " (restarted)" : " (takes effect at next Start)";
+          UI.ok(`${name}: mode → ${res.mode}${tag}`);
+          loadBots();
+        } catch (e) { UI.err(e); }
+      }
+
+      async function botStart(name) {
+        try {
+          await API.post(`/node/setup/bots/${encodeURIComponent(name)}/start`, {});
+          UI.ok(`Starting ${name}…`);
+          loadBots();
+        } catch (e) { UI.err(e); }
+      }
+      async function botStop(name) {
+        if (!confirm(`Stop ${name}?`)) return;
+        try {
+          await API.post(`/node/setup/bots/${encodeURIComponent(name)}/stop`, {});
+          UI.ok(`Stopped ${name}.`);
+          loadBots();
+        } catch (e) { UI.err(e); }
+      }
+      async function botRestart(name) {
+        if (!confirm(`Restart ${name}?`)) return;
+        try {
+          await API.post(`/node/setup/bots/${encodeURIComponent(name)}/restart`, {});
+          UI.ok(`Restarted ${name}.`);
+          loadBots();
+        } catch (e) { UI.err(e); }
+      }
+      async function botLogs(name) {
+        const out = document.getElementById("tk-bot-logs");
+        out.innerHTML = "";
+        _activeLogBot = name;
+        const header = el("div", { class: "row" }, [
+          el("h3", { style: "margin:0" }, `Logs · ${name}`),
+          el("span", { class: "spacer" }),
+          el("button", { class: "btn-ghost", onClick: () => refreshLogs() }, "Refresh"),
+          el("button", { class: "btn-ghost", onClick: () => { _activeLogBot = null; out.innerHTML = ""; } }, "Close"),
+        ]);
+        out.appendChild(header);
+        out.appendChild(el("pre", { id: "tk-bot-logs-pre", class: "small mono",
+          style: "background:var(--bg);border:1px solid var(--line);padding:8px;max-height:320px;overflow:auto;white-space:pre-wrap;margin:8px 0 0 0" }, "loading…"));
+        refreshLogs();
+      }
+      async function refreshLogs() {
+        if (!_activeLogBot) return;
+        try {
+          const res = await API.get(`/node/setup/bots/${encodeURIComponent(_activeLogBot)}/logs?tail=200`);
+          const pre = document.getElementById("tk-bot-logs-pre");
+          if (!pre) return;
+          pre.textContent = (res.lines || []).join("\n") || "(no log output yet)";
+          pre.scrollTop = pre.scrollHeight;
+        } catch (e) { UI.err(e); }
+      }
+
+      // Auto-poll bot statuses + active log tail every 5s.
+      _botsPollTimer = setInterval(() => {
+        if (document.body.contains(document.getElementById("tk-bots"))) {
+          loadBots();
+          if (_activeLogBot) refreshLogs();
+        }
+      }, 5000);
+
+      // Clean the timer up on view unmount.
+      const _origUnmount = view.unmount;
+      view.unmount = () => {
+        clearInterval(_botsPollTimer);
+        if (_origUnmount) _origUnmount();
+      };
+
+      loadBots();
       loadDiscover();
       ckList();
       return view;
