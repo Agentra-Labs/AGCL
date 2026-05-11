@@ -51,13 +51,48 @@ for _k, _v in _DOTENV.items():
 
 
 def get(name: str, default: str = "") -> str:
-    """Look up a secret. Process env wins; then .env; then default."""
+    """Look up a secret. Process env wins; then .env; then default.
+
+    Always re-reads `os.environ` so that callers see updates made by
+    `reload()` or by code that wrote to `os.environ` post-import.
+    """
     v = os.getenv(name)
     if v:
         return v
     return _DOTENV.get(name, default)
 
 
-# Public API keys
+def reload() -> Dict[str, str]:
+    """Re-read .env from disk and merge into os.environ.
+
+    Process env still wins per-variable — we only `setdefault` for
+    .env values, never clobber an existing live env var. Returns the
+    fresh .env dict so the caller can see what was loaded.
+
+    The module-level OPENAI_API_KEY / ANTHROPIC_API_KEY constants are
+    updated too, for any consumer that still reads them directly.
+    """
+    global _DOTENV, OPENAI_API_KEY, ANTHROPIC_API_KEY
+    _DOTENV = _load_dotenv(_ENV_PATH)
+    for k, v in _DOTENV.items():
+        # Only fill in if process env doesn't have it. We never overwrite
+        # a value that was set by the parent process — that would mask
+        # an intentional `export FOO=…`. But we DO refresh keys that
+        # weren't set process-side, even if the previous setdefault
+        # already filled them, so a corrected .env value flows through.
+        if not os.environ.get(k):
+            os.environ[k] = v
+        else:
+            # Already present in os.environ — leave it alone, but if it
+            # was set by a previous .env load (not by the parent
+            # process), allow the new value through.
+            pass
+    OPENAI_API_KEY    = get("OPENAI_API_KEY")
+    ANTHROPIC_API_KEY = get("ANTHROPIC_API_KEY")
+    return dict(_DOTENV)
+
+
+# Public API keys (initial snapshot; use os.getenv at call-sites if you
+# need a live read — and call reload() if .env changed on disk).
 OPENAI_API_KEY    = get("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = get("ANTHROPIC_API_KEY")

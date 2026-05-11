@@ -57,3 +57,4 @@ agcl-config.json
 
 # generated Docker / K8s / GCP artifacts (not source)
 deploy/
+!docs/deploy/

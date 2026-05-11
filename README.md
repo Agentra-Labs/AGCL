@@ -175,6 +175,7 @@ MCP details → [docs/integrations/mcp.md](docs/integrations/mcp.md).
 | Understand every config knob | **[docs/configuration.md](docs/configuration.md)** |
 | Set up the recursive multi-agent feature | **[docs/recursive.md](docs/recursive.md)** + [recursive/advanced.md](docs/recursive/advanced.md) |
 | Understand auto-training (`[stage A] / [stage B]` lines) | **[docs/recursive/training.md](docs/recursive/training.md)** |
+| Deploy AGCL anywhere (Docker, K8s, GCP, Cloudflare, Discord, vLLM, Ollama, Redis, S3, …) — step-by-step recipes | **[docs/deploy.md](docs/deploy.md)** |
 | Run AGCL in Docker, K8s, GCP Cloud Run, or behind LiteLLM | **[docs/integrations/cloud.md](docs/integrations/cloud.md)** |
 | Plug AGCL into MCP / Slack / Discord / OpenAgents / Multica | **[docs/integrations.md](docs/integrations.md)** |
 | Use AGCL from JavaScript / TypeScript | **[docs/integrations/npm.md](docs/integrations/npm.md)** |

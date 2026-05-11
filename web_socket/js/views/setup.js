@@ -125,6 +125,45 @@
         ]),
       ]));
 
+      // --- DEPLOY WIZARDS ----------------------------------------------
+      root.appendChild(el("section", { class: "block" }, [
+        el("div", { class: "row" }, [
+          el("h2", { style: "margin:0" }, "Deploy wizards"),
+          el("span", { class: "spacer" }),
+          el("button", { class: "btn-ghost", onClick: loadWizards }, "Refresh"),
+        ]),
+        el("p", { class: "small dim" },
+          "One-click guided deploys per service. Each wizard validates the credentials it asks for and saves only references / non-secret values to .env. Same flow runs in the CLI as ",
+          el("code", null, "agcl deploy <name>"), "."),
+        el("div", { id: "wizards-list", class: "grid", style: "grid-template-columns:repeat(auto-fill,minmax(260px,1fr))" }, loadingNode()),
+        el("div", { id: "wizard-run", style: "margin-top:14px" }),
+      ]));
+
+      // --- PROVIDER STATUS + QUOTAS -----------------------------------
+      root.appendChild(el("section", { class: "block" }, [
+        el("div", { class: "row" }, [
+          el("h2", { style: "margin:0" }, "Cloud providers"),
+          el("span", { class: "spacer" }),
+          el("button", { class: "btn-ghost", onClick: () => API.post("/node/setup/secrets/reload", {}).then(() => { UI.ok("Secrets reloaded."); loadProviders(); }).catch(UI.err) }, "Reload .env"),
+          el("button", { onClick: loadProviders }, "Check now"),
+        ]),
+        el("p", { class: "small dim" },
+          "Hits each provider's API with the key in your .env. For OpenAI / DeepSeek we also try to read your quota or balance; Anthropic does not expose a balance endpoint via regular keys."),
+        el("div", { id: "providers-wrap" }, loadingNode()),
+      ]));
+
+      // --- INTEGRATIONS / AUTH -----------------------------------------
+      root.appendChild(el("section", { class: "block" }, [
+        el("div", { class: "row" }, [
+          el("h2", { style: "margin:0" }, "Integrations (Docker / GCP / Kubernetes)"),
+          el("span", { class: "spacer" }),
+          el("button", { class: "btn-ghost", onClick: loadIntegrations }, "Rescan"),
+        ]),
+        el("p", { class: "small dim" },
+          "Connect AGCL to real ops accounts. We never store passwords — Docker passwords go to your local ~/.docker/config.json via `docker login`; GCP and K8s creds are referenced by file path, not copied. Pointers (registry name, service-account path, kubeconfig path) are saved in .env so the node remembers them across restarts."),
+        el("div", { id: "integrations-wrap" }, loadingNode()),
+      ]));
+
       // --- RECOMMENDED MODELS ------------------------------------------
       root.appendChild(el("section", { class: "block" }, [
         el("h2", null, "Recommended models"),
@@ -483,8 +522,394 @@
         } catch (e) { UI.err(e); }
       }
 
+      async function loadProviders() {
+        const wrap = document.getElementById("providers-wrap");
+        wrap.innerHTML = "";
+        wrap.appendChild(loadingNode("checking providers…"));
+        try {
+          const res = await API.get("/node/setup/providers/status");
+          wrap.innerHTML = "";
+          const pps = res.providers || {};
+          const names = Object.keys(pps);
+          if (!names.length) {
+            wrap.appendChild(el("div", { class: "empty" }, "No providers checked."));
+            return;
+          }
+          const tbl = el("table", null, [
+            el("thead", null, el("tr", null,
+              ["provider", "status", "message", "quota / balance"].map(h => el("th", { text: h })))),
+          ]);
+          const tb = el("tbody"); tbl.appendChild(tb);
+          names.forEach(name => {
+            const p = pps[name] || {};
+            const ok = !!p.ok;
+            const q = p.quota || {};
+            let qcell = "—";
+            if (q.available) {
+              if (name === "deepseek" && (q.balances || []).length) {
+                qcell = q.balances.map(b => `${b.currency} ${b.total_balance} (granted ${b.granted_balance})`).join(" · ");
+              } else if (name === "openai" && q.total_available != null) {
+                qcell = `$${q.total_available} available · $${q.total_used || 0} used`;
+              } else {
+                qcell = JSON.stringify(q);
+              }
+            } else if (q.message) {
+              qcell = q.message;
+            }
+            tb.appendChild(el("tr", null, [
+              el("td", { class: "mono", text: name }),
+              el("td", null, [el("span", { class: "pill " + (ok ? "ok" : "err") }, ok ? "ok" : "err")]),
+              el("td", { class: "small", text: p.message || "—" }),
+              el("td", { class: "small mono", text: qcell }),
+            ]));
+          });
+          wrap.appendChild(tbl);
+        } catch (e) { UI.err(e); }
+      }
+
+      async function loadIntegrations() {
+        const wrap = document.getElementById("integrations-wrap");
+        wrap.innerHTML = ""; wrap.appendChild(loadingNode("checking integrations…"));
+        try {
+          const all = await API.get("/node/setup/auth/status");
+          wrap.innerHTML = "";
+          wrap.appendChild(renderDockerCard(all.docker || {}));
+          wrap.appendChild(renderGCPCard(all.gcp || {}));
+          wrap.appendChild(renderK8sCard(all.kubernetes || {}));
+        } catch (e) { UI.err(e); }
+      }
+
+      function pillForOk(ok) { return el("span", { class: "pill " + (ok ? "ok" : "err") }, ok ? "connected" : "not connected"); }
+
+      function renderDockerCard(d) {
+        const card = el("div", { class: "card", style: "margin-bottom:14px" }, [
+          el("div", { class: "row" }, [
+            el("h3", { style: "margin:0" }, "Docker"),
+            el("span", { class: "spacer" }),
+            pillForOk(d.ok),
+          ]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "installed"),
+            el("span", { class: "v" }, [d.installed ? badge("ok", "yes") : badge("err", "no")])]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "daemon"),
+            el("span", { class: "v" }, [d.daemon_running ? badge("ok", "running") : badge("err", "down")])]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "logged-in registries"),
+            el("span", { class: "v small mono" }, (d.registries_logged_in || []).join(", ") || "—")]),
+        ]);
+        const form = el("div", { class: "row", style: "margin-top:10px" }, [
+          el("input", { type: "text", id: "dk-reg", placeholder: "registry (e.g. ghcr.io)", value: d.env_registry || "", style: "flex:1;min-width:160px" }),
+          el("input", { type: "text", id: "dk-user", placeholder: "username", value: d.env_username || "", style: "min-width:140px" }),
+          el("input", { type: "password", id: "dk-pw", placeholder: "password / token", style: "min-width:160px" }),
+          el("button", { onClick: dockerLogin }, "Login"),
+          el("button", { class: "btn-ghost", onClick: dockerLogout }, "Logout"),
+        ]);
+        card.appendChild(form);
+        if (!d.installed) {
+          card.appendChild(el("p", { class: "small dim", style: "margin-top:6px" },
+            "Docker isn't on PATH. Install Docker Desktop / Engine, then click Rescan."));
+        }
+        return card;
+      }
+
+      async function dockerLogin() {
+        const registry = document.getElementById("dk-reg").value.trim();
+        const username = document.getElementById("dk-user").value.trim();
+        const password = document.getElementById("dk-pw").value;
+        if (!registry || !username || !password) {
+          UI.err(new Error("registry, username and password required"));
+          return;
+        }
+        try {
+          const res = await API.post("/node/setup/auth/docker/login",
+            { registry, username, password, persist_reference: true });
+          UI.ok(res.message || "logged in");
+          document.getElementById("dk-pw").value = "";
+          loadIntegrations();
+        } catch (e) { UI.err(e); }
+      }
+      async function dockerLogout() {
+        const registry = document.getElementById("dk-reg").value.trim();
+        if (!registry) { UI.err(new Error("registry required")); return; }
+        try {
+          await API.post("/node/setup/auth/docker/logout", { registry });
+          UI.ok("logged out from " + registry);
+          loadIntegrations();
+        } catch (e) { UI.err(e); }
+      }
+
+      function renderGCPCard(g) {
+        const sa = g.service_account || {};
+        const card = el("div", { class: "card", style: "margin-bottom:14px" }, [
+          el("div", { class: "row" }, [
+            el("h3", { style: "margin:0" }, "Google Cloud"),
+            el("span", { class: "spacer" }),
+            pillForOk(g.ok),
+          ]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "service account path"),
+            el("span", { class: "v small mono clip", title: g.service_account_path || "" }, g.service_account_path || "—")]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "client email"),
+            el("span", { class: "v small mono clip" }, sa.client_email || "—")]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "project"),
+            el("span", { class: "v small mono" }, g.project || "—")]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "gcloud CLI"),
+            el("span", { class: "v" }, [g.gcloud_installed ? badge("ok", "installed") : badge("dim", "not installed")])]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "gcloud accounts"),
+            el("span", { class: "v small mono" }, (g.gcloud_accounts || []).join(", ") || "—")]),
+        ]);
+        const form = el("div", { class: "row", style: "margin-top:10px" }, [
+          el("input", { type: "text", id: "gcp-sa", placeholder: "/path/to/service-account.json", value: g.service_account_path || "", style: "flex:1" }),
+          el("input", { type: "text", id: "gcp-proj", placeholder: "(project id, optional)", value: g.project || "", style: "min-width:160px" }),
+          el("button", { onClick: gcpSet }, "Connect"),
+          el("button", { class: "btn-ghost", onClick: gcpClear }, "Disconnect"),
+        ]);
+        card.appendChild(form);
+        return card;
+      }
+
+      async function gcpSet() {
+        const path = document.getElementById("gcp-sa").value.trim();
+        const proj = document.getElementById("gcp-proj").value.trim();
+        if (!path) { UI.err(new Error("service-account path required")); return; }
+        try {
+          const res = await API.post("/node/setup/auth/gcp/set",
+            { service_account_path: path, project: proj || null });
+          UI.ok("GCP connected as " + (res.client_email || path));
+          loadIntegrations();
+        } catch (e) { UI.err(e); }
+      }
+      async function gcpClear() {
+        if (!confirm("Clear GCP credentials from .env?")) return;
+        try {
+          await API.post("/node/setup/auth/gcp/clear", {});
+          UI.ok("GCP credentials cleared.");
+          loadIntegrations();
+        } catch (e) { UI.err(e); }
+      }
+
+      function renderK8sCard(k) {
+        const card = el("div", { class: "card" }, [
+          el("div", { class: "row" }, [
+            el("h3", { style: "margin:0" }, "Kubernetes"),
+            el("span", { class: "spacer" }),
+            pillForOk(k.ok),
+          ]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "kubeconfig"),
+            el("span", { class: "v small mono clip", title: k.kubeconfig || "" }, k.kubeconfig || "—")]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "kubectl"),
+            el("span", { class: "v" }, [k.kubectl_installed ? badge("ok", "installed") : badge("dim", "not installed")])]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "current context"),
+            el("span", { class: "v small mono" }, k.current_context || "—")]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "cluster reachable"),
+            el("span", { class: "v" }, [k.cluster_reachable ? badge("ok", "yes") : badge("dim", "no")])]),
+          el("div", { class: "row kv" }, [el("span", { class: "k" }, "namespaces"),
+            el("span", { class: "v small mono clip" }, (k.namespaces || []).slice(0,5).join(", ") + ((k.namespaces||[]).length > 5 ? " …" : "") || "—")]),
+        ]);
+        if (k.error) {
+          card.appendChild(el("div", { class: "small", style: "color:var(--err)" }, k.error));
+        }
+        const form = el("div", { class: "row", style: "margin-top:10px" }, [
+          el("input", { type: "text", id: "k8s-kc", placeholder: "/path/to/kubeconfig", value: k.kubeconfig || "", style: "flex:1" }),
+          el("input", { type: "text", id: "k8s-ctx", placeholder: "(context, optional)", style: "min-width:160px" }),
+          el("button", { onClick: k8sSet }, "Connect"),
+          el("button", { class: "btn-ghost", onClick: k8sClear }, "Disconnect"),
+        ]);
+        card.appendChild(form);
+        return card;
+      }
+
+      async function k8sSet() {
+        const path = document.getElementById("k8s-kc").value.trim();
+        const ctx  = document.getElementById("k8s-ctx").value.trim();
+        if (!path) { UI.err(new Error("kubeconfig path required")); return; }
+        try {
+          const res = await API.post("/node/setup/auth/k8s/set",
+            { kubeconfig_path: path, context: ctx || null });
+          UI.ok("Kubernetes connected" + (res.context ? ` (context ${res.context})` : ""));
+          loadIntegrations();
+        } catch (e) { UI.err(e); }
+      }
+      async function k8sClear() {
+        if (!confirm("Clear KUBECONFIG from .env?")) return;
+        try {
+          await API.post("/node/setup/auth/k8s/clear", {});
+          UI.ok("KUBECONFIG cleared.");
+          loadIntegrations();
+        } catch (e) { UI.err(e); }
+      }
+
+      function badge(kind, txt) { return el("span", { class: "pill " + kind }, txt); }
+
+      // ===== WIZARDS =====
+      const CATEGORY_LABEL = {
+        provider: "Provider keys",
+        bot:      "Bots",
+        cloud:    "Cloud accounts",
+        model:    "Local model servers",
+        store:    "Stores",
+        infra:    "Infrastructure",
+      };
+
+      async function loadWizards() {
+        const wrap = document.getElementById("wizards-list");
+        wrap.innerHTML = "";
+        try {
+          const res = await API.get("/node/setup/wizards");
+          const ws = res.wizards || [];
+          if (!ws.length) {
+            wrap.appendChild(el("div", { class: "empty" }, "No wizards available."));
+            return;
+          }
+          // Group by category
+          const groups = {};
+          ws.forEach(w => { (groups[w.category || ""] = groups[w.category || ""] || []).push(w); });
+          // Build a flat card grid but tagged with category headers in each card
+          ws.sort((a, b) => (a.category || "").localeCompare(b.category || "") || a.name.localeCompare(b.name));
+          ws.forEach(w => {
+            const card = el("div", { class: "card" }, [
+              el("div", { class: "row" }, [
+                el("span", { class: "pill dim" }, CATEGORY_LABEL[w.category] || w.category || "misc"),
+                el("span", { class: "spacer" }),
+                el("span", { class: "small mono dim" }, w.name),
+              ]),
+              el("h3", { style: "margin:8px 0 4px 0" }, w.title),
+              el("p", { class: "small dim", style: "margin:0" }, w.summary || ""),
+              el("div", { class: "row", style: "margin-top:10px" }, [
+                el("button", { onClick: () => startWizard(w.name) }, "Run"),
+              ]),
+            ]);
+            wrap.appendChild(card);
+          });
+        } catch (e) { UI.err(e); }
+      }
+
+      async function startWizard(name) {
+        const run = document.getElementById("wizard-run");
+        run.innerHTML = "";
+        run.appendChild(el("div", { class: "small dim" }, [el("span", { class: "spinner" }), " starting wizard…"]));
+        try {
+          const state = await API.post(`/node/setup/wizards/${encodeURIComponent(name)}/start`, {});
+          renderWizardState(state);
+        } catch (e) { UI.err(e); run.innerHTML = ""; }
+      }
+
+      function renderWizardState(state) {
+        const run = document.getElementById("wizard-run");
+        run.innerHTML = "";
+        if (!state) return;
+        const card = el("div", { class: "card", style: "max-width:760px" });
+        const step = state.step || {};
+        const stepKind = step.type || "";
+
+        // Header
+        card.appendChild(el("div", { class: "row" }, [
+          el("span", { class: "pill " + (state.state === "error" ? "err" : state.state === "done" ? "ok" : "") },
+            state.state || "running"),
+          el("span", { class: "spacer" }),
+          el("span", { class: "small mono dim" }, `${state.wizard} · ${state.id}`),
+          el("button", { class: "btn-ghost", onClick: () => cancelWizard(state.id) }, "Cancel"),
+        ]));
+
+        if (state.state === "error") {
+          card.appendChild(el("h3", null, "Wizard failed"));
+          card.appendChild(el("pre", { class: "small mono", style: "color:var(--err);white-space:pre-wrap" }, state.error || "unknown error"));
+          run.appendChild(card);
+          return;
+        }
+        if (state.state === "done") {
+          card.appendChild(el("h3", null, step.title || "Done"));
+          if (step.body) {
+            card.appendChild(el("div", { class: "md", style: "margin-top:6px" }, [
+              el("div", { html: window.MD.render(step.body) }),
+            ]));
+          }
+          card.appendChild(el("div", { class: "row", style: "margin-top:10px" }, [
+            el("button", { class: "btn-ghost", onClick: () => { run.innerHTML = ""; loadProviders(); loadIntegrations(); loadInventory(); } }, "Close"),
+          ]));
+          run.appendChild(card);
+          return;
+        }
+
+        // Active step
+        card.appendChild(el("h3", null, step.title || step.id));
+        if (step.body) {
+          card.appendChild(el("div", { class: "md", style: "margin:6px 0 10px" }, [
+            el("div", { html: window.MD.render(step.body) }),
+          ]));
+        }
+
+        if (stepKind === "info") {
+          card.appendChild(el("div", { class: "row" }, [
+            el("button", { onClick: () => sendAnswer(state.id, null) }, "Continue"),
+          ]));
+        } else if (stepKind === "open_url") {
+          const url = step.url || "";
+          card.appendChild(el("div", { class: "row" }, [
+            el("button", { onClick: () => { window.open(url, "_blank", "noopener,noreferrer"); } }, "Open in new tab"),
+            el("input", { type: "text", value: url, readonly: true, style: "flex:1;min-width:200px" }),
+          ]));
+          card.appendChild(el("div", { class: "row", style: "margin-top:8px" }, [
+            el("button", { onClick: () => sendAnswer(state.id, null) }, "I've done that — continue"),
+          ]));
+        } else if (stepKind === "input") {
+          const inputId = "wiz-in-" + state.id;
+          card.appendChild(el("div", { class: "field" }, [
+            el("input", {
+              id: inputId,
+              type: step.secret ? "password" : "text",
+              placeholder: step.placeholder || "",
+              value: step.default || "",
+            }),
+          ]));
+          card.appendChild(el("div", { class: "row" }, [
+            el("button", { onClick: () => {
+              const v = document.getElementById(inputId).value;
+              sendAnswer(state.id, v);
+            } }, "Continue"),
+          ]));
+        } else if (stepKind === "choice") {
+          const opts = step.options || [];
+          opts.forEach(opt => {
+            card.appendChild(el("div", { class: "row", style: "margin:4px 0" }, [
+              el("button", { onClick: () => sendAnswer(state.id, opt.value), style: "min-width:240px;justify-content:flex-start" }, opt.label),
+            ]));
+          });
+        } else if (stepKind === "confirm") {
+          card.appendChild(el("div", { class: "row" }, [
+            el("button", { class: "btn-ok",  onClick: () => sendAnswer(state.id, true) },  "Yes"),
+            el("button", { class: "btn-err", onClick: () => sendAnswer(state.id, false) }, "No"),
+          ]));
+        } else {
+          card.appendChild(el("div", { class: "small dim" }, "unknown step kind: " + stepKind));
+        }
+
+        // Tiny progress hint
+        if (Array.isArray(state.log) && state.log.length) {
+          card.appendChild(el("pre", { class: "small mono dim", style: "white-space:pre-wrap;margin-top:10px;background:var(--bg);padding:6px;border:1px solid var(--line);max-height:120px;overflow:auto" },
+            state.log.slice(-10).join("\n")));
+        }
+
+        run.appendChild(card);
+      }
+
+      async function sendAnswer(sid, value) {
+        const run = document.getElementById("wizard-run");
+        run.appendChild(el("div", { class: "small dim", style: "margin-top:6px" }, [el("span", { class: "spinner" }), " working…"]));
+        try {
+          const state = await API.post(`/node/setup/wizards/sessions/${encodeURIComponent(sid)}/answer`, { value });
+          renderWizardState(state);
+        } catch (e) { UI.err(e); }
+      }
+
+      async function cancelWizard(sid) {
+        try {
+          await API.post(`/node/setup/wizards/sessions/${encodeURIComponent(sid)}/cancel`, {});
+          UI.toast("Wizard cancelled.");
+          document.getElementById("wizard-run").innerHTML = "";
+        } catch (e) { UI.err(e); }
+      }
+
       async function loadAll() {
-        await Promise.all([loadRegistry(), loadInventory(), loadJobs()]);
+        await Promise.all([loadRegistry(), loadInventory(), loadJobs(),
+                            loadProviders(), loadIntegrations(), loadWizards()]);
       }
 
       loadAll();

@@ -488,20 +488,45 @@ def auto_chat(local_model_path: Optional[str] = None,
 
 
 def _patch_env_file(updates: Dict[str, str]) -> None:
-    """Idempotent .env patcher — replaces matching keys, appends new ones."""
+    """Idempotent .env patcher.
+
+    - For each updated key, the LAST matching line wins (older
+      duplicates are dropped — fixes a class of bugs where the file
+      accumulated duplicate KEY=… lines across runs).
+    - For each updated key not present, append at the end.
+    - Lines that are neither matched-and-updated nor matched-and-dropped
+      are preserved (comments, blank lines, unrelated keys).
+    """
     env_path = PROJECT_ROOT / ".env"
     lines: List[str] = []
     if env_path.exists():
         lines = env_path.read_text(encoding="utf-8").splitlines()
-    seen = set()
-    out: List[str] = []
-    for line in lines:
+
+    # First pass: dedupe ALL keys (not just updated ones) — keep the
+    # last occurrence of every KEY=… line. Preserves order otherwise.
+    last_idx_for_key: Dict[str, int] = {}
+    for i, line in enumerate(lines):
         m = re.match(r"^\s*([A-Z_][A-Z0-9_]*)\s*=", line)
-        if m and m.group(1) in updates:
-            out.append(f"{m.group(1)}={updates[m.group(1)]}")
-            seen.add(m.group(1))
+        if m:
+            last_idx_for_key[m.group(1)] = i
+
+    out: List[str] = []
+    seen: set = set()
+    for i, line in enumerate(lines):
+        m = re.match(r"^\s*([A-Z_][A-Z0-9_]*)\s*=", line)
+        if not m:
+            out.append(line)
+            continue
+        key = m.group(1)
+        if i != last_idx_for_key[key]:
+            # Older duplicate — drop.
+            continue
+        if key in updates:
+            out.append(f"{key}={updates[key]}")
+            seen.add(key)
         else:
             out.append(line)
+
     for k, v in updates.items():
         if k not in seen:
             out.append(f"{k}={v}")

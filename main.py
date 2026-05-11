@@ -660,6 +660,51 @@ def main():
     sl_p.add_argument("--registry", action="store_true",
         help="also print the recommended-models registry")
 
+    # `deploy` — run a per-service deploy wizard
+    dp = sub.add_parser("deploy",
+        help="run an interactive deploy wizard for a service (discord, aws, gcp, ...)")
+    dp.add_argument("wizard", nargs="?", default=None,
+        help="wizard name — leave blank to list available wizards")
+    dp.add_argument("--list", action="store_true",
+        help="list wizards and exit")
+
+    # `provider` — live check + quota fetch for OpenAI / Anthropic / DeepSeek
+    pp = sub.add_parser("provider",
+        help="check provider keys + fetch quotas")
+    pp.add_argument("action", choices=["status", "check", "quota"], default="status", nargs="?")
+    pp.add_argument("name", nargs="?", default=None,
+        choices=[None, "openai", "anthropic", "claude", "deepseek"],
+        help="provider name (for check/quota); blank = all")
+
+    # `auth` — connect to ops services (Docker / GCP / Kubernetes)
+    ap_auth = sub.add_parser("auth",
+        help="manage ops-service auth (docker, gcp, k8s)")
+    auth_sub = ap_auth.add_subparsers(dest="auth_cmd")
+    auth_sub.add_parser("status", help="show auth status for all integrations")
+    # docker
+    d_status = auth_sub.add_parser("docker-status", help="show Docker status + logins")
+    d_login = auth_sub.add_parser("docker-login", help="docker login to a registry")
+    d_login.add_argument("registry", help="e.g. docker.io, ghcr.io, gcr.io/PROJECT")
+    d_login.add_argument("--username", required=True)
+    d_login.add_argument("--password", default=None,
+        help="(insecure) pass on cmdline. Omit to read from stdin (preferred).")
+    d_logout = auth_sub.add_parser("docker-logout")
+    d_logout.add_argument("registry")
+    # gcp
+    g_status = auth_sub.add_parser("gcp-status")
+    g_set = auth_sub.add_parser("gcp-set", help="save GOOGLE_APPLICATION_CREDENTIALS to .env")
+    g_set.add_argument("service_account_path",
+        help="path to a service-account JSON file")
+    g_set.add_argument("--project", default=None,
+        help="(optional) override GOOGLE_CLOUD_PROJECT — defaults to project_id in the JSON")
+    auth_sub.add_parser("gcp-clear", help="unset GCP credentials in .env")
+    # k8s
+    auth_sub.add_parser("k8s-status")
+    k_set = auth_sub.add_parser("k8s-set", help="save KUBECONFIG to .env")
+    k_set.add_argument("kubeconfig_path", help="path to a kubeconfig file")
+    k_set.add_argument("--context", default=None, help="kubectl context to switch to")
+    auth_sub.add_parser("k8s-clear")
+
     # also accept chat flags at the top level so `python main.py --session x` still works
     ap.add_argument("--session",  default="default")
     ap.add_argument("--provider", default=None, choices=["openai", "claude"])
@@ -724,6 +769,124 @@ def main():
             print(f"applied  {k}={res['values'][k]}")
         for w in res.get("warnings", []):
             print(f"warning  {w}", file=sys.stderr)
+        sys.exit(0)
+    elif args.cmd == "provider":
+        from agcl import integrations_auth as IA
+        action = getattr(args, "action", "status") or "status"
+        name = (getattr(args, "name", None) or "").lower()
+        if action == "status" or (action == "check" and not name):
+            res = IA.check_all_providers()
+            for k, v in res.get("providers", {}).items():
+                msg = v.get("message", "")
+                quota = v.get("quota", {}) or {}
+                line = f"  {k:<10}  {('ok' if v.get('ok') else 'err'):<4}  {msg}"
+                print(line)
+                if quota.get("available"):
+                    print(f"             quota: {json.dumps({kk: vv for kk, vv in quota.items() if kk not in ('ok','available','source')})}")
+                elif quota.get("message"):
+                    print(f"             quota: ({quota['message']})")
+            sys.exit(0)
+        if action == "check":
+            mp = {"openai": IA.check_openai_key, "anthropic": IA.check_anthropic_key,
+                  "claude": IA.check_anthropic_key, "deepseek": IA.check_deepseek_key}
+            print(json.dumps(mp[name](), indent=2)); sys.exit(0)
+        if action == "quota":
+            mp = {"openai": IA.fetch_openai_quota, "anthropic": IA.fetch_anthropic_quota,
+                  "claude": IA.fetch_anthropic_quota, "deepseek": IA.fetch_deepseek_balance}
+            if not name:
+                print("provider name required for `quota`", file=sys.stderr); sys.exit(2)
+            print(json.dumps(mp[name](), indent=2)); sys.exit(0)
+    elif args.cmd == "auth":
+        from agcl import integrations_auth as IA
+        ac = getattr(args, "auth_cmd", None)
+        if not ac:
+            print("usage: agcl auth <docker-login|gcp-set|k8s-set|status|...>", file=sys.stderr); sys.exit(2)
+        if ac == "status":          print(json.dumps(IA.all_status(), indent=2)); sys.exit(0)
+        if ac == "docker-status":   print(json.dumps(IA.docker_status(), indent=2)); sys.exit(0)
+        if ac == "docker-login":
+            pw = args.password
+            if pw is None:
+                import getpass
+                pw = getpass.getpass(f"Password for {args.username}@{args.registry}: ")
+            print(json.dumps(IA.docker_login(args.registry, args.username, pw), indent=2))
+            sys.exit(0)
+        if ac == "docker-logout":   print(json.dumps(IA.docker_logout(args.registry), indent=2)); sys.exit(0)
+        if ac == "gcp-status":      print(json.dumps(IA.gcp_status(), indent=2)); sys.exit(0)
+        if ac == "gcp-set":         print(json.dumps(IA.gcp_set_credentials(args.service_account_path, args.project), indent=2)); sys.exit(0)
+        if ac == "gcp-clear":       print(json.dumps(IA.gcp_clear_credentials(), indent=2)); sys.exit(0)
+        if ac == "k8s-status":      print(json.dumps(IA.k8s_status(), indent=2)); sys.exit(0)
+        if ac == "k8s-set":         print(json.dumps(IA.k8s_set_kubeconfig(args.kubeconfig_path, args.context), indent=2)); sys.exit(0)
+        if ac == "k8s-clear":       print(json.dumps(IA.k8s_clear_kubeconfig(), indent=2)); sys.exit(0)
+        print(f"unknown auth subcommand: {ac}", file=sys.stderr); sys.exit(2)
+    elif args.cmd == "deploy":
+        from agcl import wizards as W
+        import webbrowser, getpass
+        if args.list or not args.wizard:
+            cats: dict = {}
+            for w in W.list_wizards():
+                cats.setdefault(w.get("category", ""), []).append(w)
+            for cat in sorted(cats):
+                print(f"\n== {cat or 'misc'} ==")
+                for w in sorted(cats[cat], key=lambda x: x["name"]):
+                    print(f"  {w['name']:<14}  {w['title']}")
+                    print(f"  {'':<14}  {w['summary']}")
+            print("\nrun:  python main.py deploy <name>")
+            sys.exit(0)
+        try:
+            state = W.start(args.wizard)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr); sys.exit(2)
+        # Walk the wizard
+        while state.get("state") == "running" and state.get("step"):
+            step = state["step"]
+            kind = step.get("type")
+            print()
+            print(f"── {step.get('title', step.get('id'))} ──")
+            if step.get("body"): print(step["body"])
+            if kind == "info":
+                input("[Press Enter to continue] ")
+                state = W.answer(state["id"], None)
+            elif kind == "open_url":
+                url = step.get("url", "")
+                print(f"opening: {url}")
+                try: webbrowser.open(url)
+                except Exception: pass
+                input("[Press Enter once you've done that] ")
+                state = W.answer(state["id"], None)
+            elif kind == "input":
+                prompt = f"{step.get('placeholder', '')} > " if step.get("placeholder") else "> "
+                default = step.get("default", "")
+                if default:
+                    prompt = f"[default: {default}] " + prompt
+                if step.get("secret"):
+                    val = getpass.getpass(prompt) or default
+                else:
+                    val = input(prompt) or default
+                state = W.answer(state["id"], val)
+            elif kind == "choice":
+                opts = step.get("options", [])
+                for i, opt in enumerate(opts, 1):
+                    print(f"  {i}) {opt['label']}")
+                while True:
+                    raw = input("Pick a number > ").strip()
+                    try:
+                        idx = int(raw) - 1
+                        if 0 <= idx < len(opts): break
+                    except Exception: pass
+                    print("invalid; try again")
+                state = W.answer(state["id"], opts[idx]["value"])
+            elif kind == "confirm":
+                raw = input("y/n > ").strip().lower()
+                state = W.answer(state["id"], raw in ("y", "yes", "1"))
+            elif kind == "summary":
+                print(step.get("body", ""))
+                break
+            else:
+                print(f"unknown step kind: {kind}; aborting")
+                W.cancel_session(state["id"]); break
+        if state.get("state") == "error":
+            print(f"\nwizard failed: {state.get('error')}", file=sys.stderr); sys.exit(1)
+        print("\nwizard done.")
         sys.exit(0)
     elif args.cmd == "setup-list":
         from agcl import setup as S

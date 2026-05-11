@@ -234,15 +234,24 @@ def make_node_router() -> APIRouter:
     def info():
         from agcl import config as cfg
         from agcl.recursive import persistence as P
+        # Read keys from live os.environ — the .env file might have
+        # been edited (e.g., via Setup → Auto-setup chat) after the
+        # node started, so the module-level constants can be stale.
+        openai_key = os.environ.get("OPENAI_API_KEY") or cfg.OPENAI_API_KEY
+        claude_key = os.environ.get("ANTHROPIC_API_KEY") or cfg.ANTHROPIC_API_KEY
         return {
             "service": "agcl-node",
             "platform": {
                 "state_dir": cfg.STATE_DIR,
                 "default_cloud": cfg.DEFAULT_CLOUD,
                 "providers": {
-                    "openai": bool(cfg.OPENAI_API_KEY),
-                    "claude": bool(cfg.ANTHROPIC_API_KEY),
+                    "openai": bool(openai_key),
+                    "claude": bool(claude_key),
                 },
+                "openai_configured": bool(openai_key),
+                "claude_configured": bool(claude_key),
+                "openai_model": cfg.OPENAI_MODEL,
+                "claude_model": cfg.CLAUDE_MODEL,
             },
             "mas": {
                 "pattern": cfg.MAS_PATTERN,
@@ -266,13 +275,16 @@ def make_node_router() -> APIRouter:
     @r.get("/config")
     def get_config():
         from agcl import config as cfg
+        # Read keys live so post-startup .env edits show up immediately.
+        openai_key = os.environ.get("OPENAI_API_KEY") or cfg.OPENAI_API_KEY
+        claude_key = os.environ.get("ANTHROPIC_API_KEY") or cfg.ANTHROPIC_API_KEY
         return {
             "cloud": {
                 "default":        cfg.DEFAULT_CLOUD,
                 "openai_model":   cfg.OPENAI_MODEL,
                 "claude_model":   cfg.CLAUDE_MODEL,
-                "has_openai_key": bool(cfg.OPENAI_API_KEY),
-                "has_claude_key": bool(cfg.ANTHROPIC_API_KEY),
+                "has_openai_key": bool(openai_key),
+                "has_claude_key": bool(claude_key),
             },
             "local_model": {
                 "path":               cfg.LOCAL_MODEL_PATH,
