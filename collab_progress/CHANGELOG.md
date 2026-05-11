@@ -8,6 +8,23 @@
 ## Rules
 - Always append a new entry at the TOP (after this Rules section) after every task/change (feature, fix, refactor, tests, docs).
 - Include **date** and **time in the user's detected local timezone**. Example date: `2026-04-08`; example time: `21:18 PDT`. You may use full ISO 8601 with offset instead, e.g. `2026-04-08T21:18:00-07:00`.
+
+## [Feature]: AGCL Collaboration Platform — Tasks 0-10
+
+- Date: 2026-05-11
+- Time (Local TZ): 08:54 UTC
+- Branch/PR: feat/collab-platform
+- Files Changed (high level):
+  - `agcl/collab/` (new package): `__init__.py`, `store.py`, `spaces.py`, `router.py`, `agents.py`, `tasks.py`, `presence.py`, `relay_client.py`, `cli.py`
+  - `relay/` (new service): `__init__.py`, `main.py`, `broker.py`, `space_store.py`, `requirements.txt`
+  - `web/` (new Vue 3 + Vite SPA): full frontend with SpaceDirectory, SpaceView, MessageList, MessageComposer, MentionDropdown, TaskKanban, TaskPromoteModal
+  - `agcl/node.py`: +1 line to mount collab router
+  - `main.py`: `agcl collab` subcommand added
+  - `tests/collab/`: test_spaces.py, test_router.py, test_agents.py, test_tasks.py, test_presence.py
+  - `docs/collab.md`, `docs/relay.md`
+- Details: Full collaboration platform — fluid spaces, @mention agents as peers, zero-friction task delegation with kanban, ambient intelligence, presence/typing indicators, optional cloud relay with SQLite buffering and nodeless space hosting
+- Verification: No local test runs — tracked in GH issue (see feat/collab-platform branch)
+- Notes: All existing routes and web_socket/ console untouched. GH issue opened to track test run + CI.
   - Shell (Linux/macOS): `date '+%Y-%m-%d %H:%M %Z'`
 
 - Keep the Summary concise; link to detailed files for depth.

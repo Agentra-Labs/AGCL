@@ -1027,4 +1027,11 @@ def build_node_app(auth_key: Optional[str] = None,
     except Exception as e:
         print(f"[node] setup router unavailable: {type(e).__name__}: {e}")
 
+    # Collab router (/node/collab/*) — spaces, messages, tasks, presence, agents.
+    try:
+        from agcl.collab.router import make_collab_router
+        base_app.include_router(make_collab_router())
+    except Exception as e:
+        print(f"[node] collab router unavailable: {type(e).__name__}: {e}")
+
     return base_app

@@ -588,6 +588,21 @@ def main():
     cfg_p.add_argument("--apply", action="store_true",
         help="actually write changes (without --apply, import only validates)")
 
+    # `collab` — collaboration platform CLI
+    collab_p = sub.add_parser("collab", help="collaboration platform commands")
+    collab_sub = collab_p.add_subparsers(dest="collab_cmd")
+    cc = collab_sub.add_parser("create", help="create a new space")
+    cc.add_argument("name"); cc.add_argument("--description", default="")
+    cj = collab_sub.add_parser("join", help="join a space via invite code")
+    cj.add_argument("space_id"); cj.add_argument("code")
+    cs = collab_sub.add_parser("send", help="post a message to a space")
+    cs.add_argument("space_id"); cs.add_argument("message")
+    collab_sub.add_parser("spaces", help="list spaces")
+    ca = collab_sub.add_parser("agents", help="agent commands")
+    ca.add_argument("action", choices=["list"])
+    ct = collab_sub.add_parser("tasks", help="task commands")
+    ct.add_argument("action", choices=["list"]); ct.add_argument("space_id")
+
     # `toolkit` controls the infra/inference adapters subsystem
     tk_p = sub.add_parser("toolkit",
         help="infra/inference toolkit (litellm, ollama, vllm, redis, s3, cloudflare, docker, k8s, ...)")
@@ -800,6 +815,9 @@ def main():
         sys.exit(run_config_bundle(
             action=args.action, path=args.path, apply=args.apply,
         ))
+    elif args.cmd == "collab":
+        from agcl.collab.cli import run as run_collab
+        sys.exit(run_collab(args))
     else:
         # default: persistent TUI shell. Server is opt-in via "serve"/"node"
         # subcommands or the in-shell menu.
